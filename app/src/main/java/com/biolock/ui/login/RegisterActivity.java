@@ -1,12 +1,12 @@
 package com.biolock.ui.login;
 
+import android.app.ProgressDialog;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import com.biolock.R;
-import com.biolock.database.DatabaseHelper;
 import com.biolock.model.User;
 import com.biolock.repository.Result;
 import com.biolock.repository.UserRepository;
@@ -16,7 +16,6 @@ public class RegisterActivity extends AppCompatActivity {
     private EditText editTextEmail;
     private EditText editTextPassword;
     private EditText editTextConfirmPassword;
-    private DatabaseHelper dbHelper;
     private UserRepository userRepository;
     private Button buttonRegister;
 
@@ -25,8 +24,36 @@ public class RegisterActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_register);
 
+        initializeComponents();
+    }
+
+    private void initializeComponents() {
         initializeViews();
-        initializeDatabase();
+
+        // Show progress while initializing
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setMessage("Initializing...");
+        progress.setCancelable(false);
+        progress.show();
+
+        new Thread(() -> {
+            try {
+                userRepository = new UserRepository();
+
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    buttonRegister.setEnabled(true);
+                    setupClickListeners();
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    Toast.makeText(this, "Initialization failed: " + e.getMessage(),
+                            Toast.LENGTH_LONG).show();
+                    finish();
+                });
+            }
+        }).start();
     }
 
     private void initializeViews() {
@@ -35,29 +62,7 @@ public class RegisterActivity extends AppCompatActivity {
         editTextPassword = findViewById(R.id.editTextPassword);
         editTextConfirmPassword = findViewById(R.id.editTextConfirmPassword);
         buttonRegister = findViewById(R.id.buttonRegister);
-
-        // Disable register button until database is initialized
         buttonRegister.setEnabled(false);
-    }
-
-    private void initializeDatabase() {
-        new Thread(() -> {
-            try {
-                dbHelper = DatabaseHelper.getInstance();
-                dbHelper.initialize();
-                userRepository = new UserRepository();
-
-                runOnUiThread(() -> {
-                    buttonRegister.setEnabled(true);
-                    setupClickListeners();
-                });
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    Toast.makeText(this, "Database initialization failed", Toast.LENGTH_LONG).show();
-                    finish();
-                });
-            }
-        }).start();
     }
 
     private void setupClickListeners() {
@@ -65,12 +70,6 @@ public class RegisterActivity extends AppCompatActivity {
     }
 
     private void handleRegistration() {
-        // Extra null check for safety
-        if (userRepository == null) {
-            Toast.makeText(this, "Please wait for database initialization", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
         String username = editTextUsername.getText().toString().trim();
         String email = editTextEmail.getText().toString().trim();
         String password = editTextPassword.getText().toString();
@@ -87,6 +86,11 @@ public class RegisterActivity extends AppCompatActivity {
             return;
         }
 
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setMessage("Registering...");
+        progress.setCancelable(false);
+        progress.show();
+
         new Thread(() -> {
             try {
                 User newUser = new User();
@@ -97,8 +101,10 @@ public class RegisterActivity extends AppCompatActivity {
                 Result<Long> result = userRepository.register(newUser, password);
 
                 runOnUiThread(() -> {
+                    progress.dismiss();
                     if (result.isSuccess()) {
-                        Toast.makeText(RegisterActivity.this, "Registration successful", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(RegisterActivity.this,
+                                "Registration successful", Toast.LENGTH_SHORT).show();
                         finish();
                     } else {
                         Toast.makeText(RegisterActivity.this,
@@ -107,17 +113,12 @@ public class RegisterActivity extends AppCompatActivity {
                     }
                 });
             } catch (Exception e) {
-                runOnUiThread(() -> Toast.makeText(RegisterActivity.this,
-                        "Registration failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    Toast.makeText(RegisterActivity.this,
+                            "Registration failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
             }
         }).start();
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (dbHelper != null) {
-            dbHelper.cleanup();
-        }
     }
 }

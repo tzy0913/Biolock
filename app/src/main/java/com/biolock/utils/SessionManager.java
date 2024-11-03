@@ -50,8 +50,10 @@ public class SessionManager {
         return prefs.getString(KEY_USER_ROLE, null);
     }
 
-    public void logout() {
+    public void clearLoginState() {
+        long lastUser = getUserId(); // Save the last user ID
         editor.clear();
+        editor.putLong(KEY_USER_ID, lastUser); // Keep the last user ID
         editor.apply();
     }
 }

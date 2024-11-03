@@ -69,7 +69,7 @@ public class DashboardActivity extends AppCompatActivity {
         });
 
         findViewById(R.id.buttonLogout).setOnClickListener(v -> {
-            sessionManager.logout();
+            sessionManager.clearLoginState();
             if (dbHelper != null) {
                 dbHelper.cleanup();
             }

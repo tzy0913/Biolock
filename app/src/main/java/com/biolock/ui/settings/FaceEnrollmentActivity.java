@@ -1,4 +1,3 @@
-// FaceEnrollmentActivity.java
 package com.biolock.ui.settings;
 
 import android.Manifest;
@@ -6,7 +5,9 @@ import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.media.Image;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
@@ -26,7 +27,6 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.biolock.R;
-import com.biolock.database.DatabaseHelper;
 import com.biolock.model.FaceEmbedding;
 import com.biolock.repository.FaceEmbeddingRepository;
 import com.biolock.repository.Result;
@@ -41,11 +41,13 @@ import com.google.mlkit.vision.face.FaceDetection;
 import com.google.mlkit.vision.face.FaceDetector;
 import com.google.mlkit.vision.face.FaceDetectorOptions;
 
+import java.util.Arrays;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class FaceEnrollmentActivity extends AppCompatActivity {
+    private static final String TAG = "FaceEnrollmentActivity";
     private static final int PERMISSION_REQUEST_CODE = 10;
     private static final String[] REQUIRED_PERMISSIONS = new String[]{Manifest.permission.CAMERA};
 
@@ -98,12 +100,13 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
         try {
             faceRecognition = new FaceRecognition(this);
         } catch (Exception e) {
+            Log.e(TAG, "Error initializing face recognition", e);
             Toast.makeText(this, "Error initializing face recognition", Toast.LENGTH_SHORT).show();
             finish();
             return;
         }
 
-        // Initialize ML Kit face detector
+        // Initialize ML Kit face detector with high accuracy settings
         FaceDetectorOptions options = new FaceDetectorOptions.Builder()
                 .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
                 .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
@@ -125,6 +128,7 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
                 ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
                 bindCameraUseCases(cameraProvider);
             } catch (ExecutionException | InterruptedException e) {
+                Log.e(TAG, "Error starting camera", e);
                 Toast.makeText(this, "Error starting camera: " + e.getMessage(),
                         Toast.LENGTH_SHORT).show();
             }
@@ -133,7 +137,6 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
 
     private void bindCameraUseCases(ProcessCameraProvider cameraProvider) {
         Preview preview = new Preview.Builder().build();
-
         imageCapture = new ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                 .build();
@@ -169,6 +172,7 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
                         image.close();
                     })
                     .addOnFailureListener(e -> {
+                        Log.e(TAG, "Face detection failed", e);
                         updateStatus("Detection failed");
                         setNormalOverlay();
                         image.close();
@@ -186,6 +190,7 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
             );
             preview.setSurfaceProvider(previewView.getSurfaceProvider());
         } catch (Exception e) {
+            Log.e(TAG, "Error binding camera uses cases", e);
             Toast.makeText(this, "Error binding camera uses cases",
                     Toast.LENGTH_SHORT).show();
         }
@@ -198,10 +203,10 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
 
             if (result.state == LivenessDetector.LivenessState.COMPLETED) {
                 livenessCheckPassed = true;
-                setScanningOverlay();  // Keep the scanning overlay after passing liveness
-                checkFaceQuality(face);  // Immediately check face quality
+                setScanningOverlay();
+                checkFaceQuality(face);
             } else {
-                setNormalOverlay();  // Show normal overlay during liveness check
+                setNormalOverlay();
                 captureButton.setEnabled(false);
             }
         } else {
@@ -213,98 +218,167 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
         float rotY = face.getHeadEulerAngleY();
         float rotZ = face.getHeadEulerAngleZ();
 
-        if (Math.abs(rotY) < 10 && Math.abs(rotZ) < 10) {
+        Log.d(TAG, String.format("Face angles - Y: %.2f, Z: %.2f", rotY, rotZ));
+
+        boolean angleYOk = Math.abs(rotY) < 15;
+        boolean angleZOk = Math.abs(rotZ) < 15;
+
+        Log.d(TAG, String.format("Angle checks - Y: %b, Z: %b", angleYOk, angleZOk));
+
+        if (angleYOk && angleZOk) {
+            Log.d(TAG, "Quality check passed - enabling capture button");
             updateStatus("Good position - ready to capture");
-            setScanningOverlay();  // Keep scanning overlay when in good position
+            setScanningOverlay();
             captureButton.setEnabled(true);
         } else {
-            updateStatus("Please look straight at the camera");
-            setNormalOverlay();  // Switch to normal overlay when position is not good
+            Log.d(TAG, "Quality check failed - keeping capture button disabled");
+            StringBuilder guidance = new StringBuilder("Please adjust:");
+            if (!angleYOk) {
+                guidance.append(" face the camera directly");
+            }
+            if (!angleZOk) {
+                if (guidance.length() > 14) guidance.append(" and");
+                guidance.append(" keep head straight");
+            }
+            updateStatus(guidance.toString());
+            setNormalOverlay();
             captureButton.setEnabled(false);
         }
     }
 
     private void captureAndEnrollFace() {
-        imageCapture.takePicture(cameraExecutor, new ImageCapture.OnImageCapturedCallback() {
-            @Override
-            public void onCaptureSuccess(@NonNull ImageProxy image) {
-                try {
-                    InputImage inputImage = InputImage.fromMediaImage(
-                            image.getImage(),
-                            image.getImageInfo().getRotationDegrees()
-                    );
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("Processing face enrollment...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
 
-                    faceDetector.process(inputImage)
-                            .addOnSuccessListener(faces -> {
-                                if (!faces.isEmpty()) {
-                                    Face detectedFace = faces.get(0);
+        imageCapture.takePicture(ContextCompat.getMainExecutor(this),
+                new ImageCapture.OnImageCapturedCallback() {
+                    @Override
+                    public void onCaptureSuccess(@NonNull ImageProxy imageProxy) {
+                        try {
+                            Image image = imageProxy.getImage();
+                            if (image == null) {
+                                handleError("Failed to capture image", progressDialog);
+                                imageProxy.close();
+                                return;
+                            }
 
-                                    Bitmap faceBitmap = FacePreprocessor.extractFace(
-                                            image.getImage(),
-                                            detectedFace.getBoundingBox(),
-                                            image.getImageInfo().getRotationDegrees()
-                                    );
+                            final int rotation = imageProxy.getImageInfo().getRotationDegrees();
+                            InputImage inputImage = InputImage.fromMediaImage(image, rotation);
 
-                                    if (faceBitmap != null) {
-                                        float[] embedding = faceRecognition.generateEmbedding(faceBitmap);
-                                        float[] normalizedEmbedding =
-                                                FacePreprocessor.normalizeEmbedding(embedding);
+                            faceDetector.process(inputImage)
+                                    .addOnSuccessListener(faces -> {
+                                        if (!faces.isEmpty()) {
+                                            Face detectedFace = faces.get(0);
+                                            // Process in background thread
+                                            new Thread(() -> {
+                                                try {
+                                                    // Extract face bitmap
+                                                    Bitmap faceBitmap = FacePreprocessor.extractFace(
+                                                            image,
+                                                            detectedFace.getBoundingBox(),
+                                                            rotation
+                                                    );
 
-                                        FaceEmbedding faceEmbedding = new FaceEmbedding();
-                                        faceEmbedding.setUserId(sessionManager.getUserId());
-                                        faceEmbedding.setEmbeddingData(
-                                                FacePreprocessor.bitmapToByteArray(faceBitmap));
-                                        faceEmbedding.setConfidenceScore(0.0);  // Initial confidence
+                                                    if (faceBitmap == null) {
+                                                        runOnUiThread(() -> handleError("Failed to process face image", progressDialog));
+                                                        return;
+                                                    }
 
-                                        Result<Long> result =
-                                                faceEmbeddingRepository.saveFaceEmbedding(faceEmbedding);
+                                                    // Generate embedding using FaceRecognition
+                                                    float[] embedding = faceRecognition.generateEmbedding(faceBitmap);
 
-                                        if (result.isSuccess()) {
-                                            runOnUiThread(() -> {
-                                                Toast.makeText(FaceEnrollmentActivity.this,
-                                                        "Face enrolled successfully",
-                                                        Toast.LENGTH_SHORT).show();
-                                                finish();
-                                            });
+                                                    // Log embedding values for debugging
+                                                    Log.d(TAG, "Raw embedding first 5 values: " +
+                                                            Arrays.toString(Arrays.copyOfRange(embedding, 0, 5)));
+
+                                                    // Convert to bytes using FaceRecognition
+                                                    byte[] embeddingBytes = faceRecognition.embeddingToBytes(embedding);
+
+                                                    // Calculate confidence score
+                                                    double confidenceScore = calculateConfidence(detectedFace);
+
+                                                    // Create embedding object
+                                                    FaceEmbedding faceEmbedding = new FaceEmbedding();
+                                                    faceEmbedding.setUserId(sessionManager.getUserId());
+                                                    faceEmbedding.setEmbeddingData(embeddingBytes);
+                                                    faceEmbedding.setConfidenceScore(confidenceScore);
+
+                                                    // Save to database
+                                                    Result<Long> result = faceEmbeddingRepository.saveFaceEmbedding(faceEmbedding);
+                                                    runOnUiThread(() -> handleEnrollmentResult(result, progressDialog));
+
+                                                } catch (Exception e) {
+                                                    Log.e(TAG, "Error processing face", e);
+                                                    runOnUiThread(() -> handleError("Error processing face: " + e.getMessage(), progressDialog));
+                                                } finally {
+                                                    imageProxy.close();
+                                                }
+                                            }).start();
                                         } else {
-                                            runOnUiThread(() -> {
-                                                Toast.makeText(FaceEnrollmentActivity.this,
-                                                        "Enrollment failed: " + result.getError().getMessage(),
-                                                        Toast.LENGTH_SHORT).show();
-                                            });
+                                            handleError("No face detected", progressDialog);
+                                            imageProxy.close();
                                         }
-                                    }
-                                }
-                            })
-                            .addOnFailureListener(e -> {
-                                runOnUiThread(() -> {
-                                    Toast.makeText(FaceEnrollmentActivity.this,
-                                            "Face detection failed: " + e.getMessage(),
-                                            Toast.LENGTH_SHORT).show();
-                                });
-                            })
-                            .addOnCompleteListener(task -> {
-                                image.close();
-                            });
+                                    })
+                                    .addOnFailureListener(e -> {
+                                        handleError("Face detection failed: " + e.getMessage(), progressDialog);
+                                        imageProxy.close();
+                                    });
 
-                } catch (Exception e) {
-                    image.close();
-                    runOnUiThread(() -> {
-                        Toast.makeText(FaceEnrollmentActivity.this,
-                                "Error processing image: " + e.getMessage(),
-                                Toast.LENGTH_SHORT).show();
-                    });
-                }
-            }
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error in capture process", e);
+                            handleError("Error capturing image: " + e.getMessage(), progressDialog);
+                            imageProxy.close();
+                        }
+                    }
 
-            @Override
-            public void onError(@NonNull ImageCaptureException exception) {
-                runOnUiThread(() -> {
-                    Toast.makeText(FaceEnrollmentActivity.this,
-                            "Capture failed: " + exception.getMessage(),
-                            Toast.LENGTH_SHORT).show();
+                    @Override
+                    public void onError(@NonNull ImageCaptureException e) {
+                        Log.e(TAG, "Image capture failed", e);
+                        handleError("Failed to capture image: " + e.getMessage(), progressDialog);
+                    }
                 });
+    }
+
+    private double calculateConfidence(Face face) {
+        double baseConfidence = 0.4;
+        double angleWeight = 0.3;
+        double rotationWeight = 0.3;
+        double maxAngle = 45.0;
+
+        double angleConfidence = 1.0 - (Math.abs(face.getHeadEulerAngleY()) / maxAngle);
+        double rotationConfidence = 1.0 - (Math.abs(face.getHeadEulerAngleZ()) / maxAngle);
+
+        return Math.min((baseConfidence +
+                (angleConfidence * angleWeight) +
+                (rotationConfidence * rotationWeight)) * 100, 100.0);
+    }
+
+    private void handleEnrollmentResult(Result<Long> result, ProgressDialog progressDialog) {
+        runOnUiThread(() -> {
+            progressDialog.dismiss();
+            if (result.isSuccess()) {
+                Toast.makeText(this, "Face enrolled successfully", Toast.LENGTH_SHORT).show();
+                finish();
+            } else {
+                new AlertDialog.Builder(this)
+                        .setTitle("Enrollment Failed")
+                        .setMessage(result.getError().getMessage())
+                        .setPositiveButton("OK", null)
+                        .show();
             }
+        });
+    }
+
+    private void handleError(String message, ProgressDialog progressDialog) {
+        runOnUiThread(() -> {
+            progressDialog.dismiss();
+            new AlertDialog.Builder(this)
+                    .setTitle("Error")
+                    .setMessage(message)
+                    .setPositiveButton("OK", null)
+                    .show();
         });
     }
 
@@ -313,13 +387,11 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
     }
 
     private void setNormalOverlay() {
-        runOnUiThread(() ->
-                overlayView.setBackgroundResource(R.drawable.normal_overlay));
+        runOnUiThread(() -> overlayView.setBackgroundResource(R.drawable.normal_overlay));
     }
 
     private void setScanningOverlay() {
-        runOnUiThread(() ->
-                overlayView.setBackgroundResource(R.drawable.scanning_overlay));
+        runOnUiThread(() -> overlayView.setBackgroundResource(R.drawable.scanning_overlay));
     }
 
     private boolean allPermissionsGranted() {
