@@ -8,6 +8,8 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.media.Image;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.widget.EditText;
@@ -26,9 +28,11 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.biolock.R;
+import com.biolock.model.SecuritySettings;
 import com.biolock.model.User;
 import com.biolock.repository.FaceEmbeddingRepository;
 import com.biolock.repository.Result;
+import com.biolock.repository.SecuritySettingsRepository;
 import com.biolock.repository.UserRepository;
 import com.biolock.ui.dashboard.DashboardActivity;
 import com.biolock.utils.FaceAuthenticator;
@@ -44,14 +48,17 @@ import com.google.mlkit.vision.face.FaceDetector;
 import com.google.mlkit.vision.face.FaceDetectorOptions;
 
 import java.nio.ByteBuffer;
+import java.util.Calendar;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class LoginActivity extends AppCompatActivity {
+    // Constants
     private static final String TAG = "LoginActivity";
     private static final int PERMISSION_REQUEST_CODE = 10;
     private static final String[] REQUIRED_PERMISSIONS = new String[]{Manifest.permission.CAMERA};
+    private static final long WELCOME_DELAY = 1500; // 1.5 seconds
 
     // UI Components
     private LinearLayout loginChoiceLayout;
@@ -62,22 +69,34 @@ public class LoginActivity extends AppCompatActivity {
     private EditText editTextEmail;
     private EditText editTextPassword;
     private View overlayView;
+    private View welcomeOverlay;
+    private TextView welcomeText;
 
-    // Camera Components
+    // Camera and Detection Components
     private FaceDetector faceDetector;
+    private ProcessCameraProvider cameraProvider;
     private final ExecutorService cameraExecutor = Executors.newSingleThreadExecutor();
 
-    // Utility Components
+    // Repository and Utility Components
     private UserRepository userRepository;
-    private FaceEmbeddingRepository faceRepository;
+    private FaceEmbeddingRepository faceEmbeddingRepository;
     private FaceRecognition faceRecognition;
     private FaceAuthenticator faceAuthenticator;
     private LivenessDetector livenessDetector;
     private SessionManager sessionManager;
+    private SecuritySettingsRepository securitySettingsRepository;
 
-    // State
+    // Security and State Management
+    private SecuritySettings securitySettings;
+    private boolean hasFaceEnrollment = false;
     private boolean livenessCheckPassed = false;
+    private boolean isAuthenticationSuccessful = false;
     private Long lastUserId;
+    private boolean isAuthenticating = false;
+    private int currentAttempt = 0;
+    private long lastAuthAttemptTime = 0;
+    private static final long AUTH_ATTEMPT_DELAY = 500;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -85,9 +104,11 @@ public class LoginActivity extends AppCompatActivity {
         setContentView(R.layout.activity_login);
 
         sessionManager = new SessionManager(this);
-        // Get the lastUserId from sharedPreferences, even if not currently logged in
+        securitySettingsRepository = new SecuritySettingsRepository();
+
+        // Get the lastUserId from sharedPreferences
         lastUserId = sessionManager.getUserId();
-        if (lastUserId == -1) { // If no last user found
+        if (lastUserId == -1) {
             lastUserId = null;
         }
 
@@ -98,6 +119,23 @@ public class LoginActivity extends AppCompatActivity {
         }
 
         initializeComponents();
+        loadSecuritySettings();
+    }
+
+    private void loadSecuritySettings() {
+        if (lastUserId != null) {
+            new Thread(() -> {
+                Result<SecuritySettings> result = securitySettingsRepository.getSettings(lastUserId);
+                if (result.isSuccess()) {
+                    securitySettings = result.getData();
+                } else {
+                    // Use defaults if can't load settings
+                    securitySettings = new SecuritySettings();
+                    securitySettings.setMaxFailedAttempts(SecuritySettingsRepository.DEFAULT_MAX_ATTEMPTS);
+                    securitySettings.setLockoutDurationMins(SecuritySettingsRepository.DEFAULT_LOCKOUT_DURATION);
+                }
+            }).start();
+        }
     }
 
     private void initializeComponents() {
@@ -110,12 +148,14 @@ public class LoginActivity extends AppCompatActivity {
 
         new Thread(() -> {
             try {
+                // Initialize repositories and utilities
                 userRepository = new UserRepository();
-                faceRepository = new FaceEmbeddingRepository();
+                faceEmbeddingRepository = new FaceEmbeddingRepository();
                 faceRecognition = new FaceRecognition(this);
-                faceAuthenticator = new FaceAuthenticator(faceRepository, faceRecognition);
+                faceAuthenticator = new FaceAuthenticator(faceEmbeddingRepository, faceRecognition);
                 livenessDetector = new LivenessDetector();
 
+                // Configure face detector options
                 FaceDetectorOptions options = new FaceDetectorOptions.Builder()
                         .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
                         .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
@@ -123,6 +163,19 @@ public class LoginActivity extends AppCompatActivity {
                         .build();
                 faceDetector = FaceDetection.getClient(options);
 
+                // Check face enrollment status
+                Result<Boolean> hasFaceResult = faceEmbeddingRepository.hasFaceEmbedding(lastUserId);
+                if (hasFaceResult.isSuccess()) {
+                    hasFaceEnrollment = hasFaceResult.getData();
+                    if (!hasFaceEnrollment) {
+                        runOnUiThread(() -> {
+                            updateStatus("Face not enrolled. Please enroll face first.");
+                            setNormalOverlay();
+                        });
+                    }
+                }
+
+                // Complete initialization on UI thread
                 runOnUiThread(() -> {
                     progress.dismiss();
                     setupClickListeners();
@@ -138,6 +191,7 @@ public class LoginActivity extends AppCompatActivity {
         }).start();
     }
 
+
     private void initializeViews() {
         loginChoiceLayout = findViewById(R.id.loginChoiceLayout);
         manualLoginLayout = findViewById(R.id.manualLoginLayout);
@@ -147,6 +201,25 @@ public class LoginActivity extends AppCompatActivity {
         editTextEmail = findViewById(R.id.editTextEmail);
         editTextPassword = findViewById(R.id.editTextPassword);
         overlayView = findViewById(R.id.overlayView);
+
+        welcomeOverlay = findViewById(R.id.welcomeOverlay);
+        welcomeText = findViewById(R.id.welcomeText);
+        welcomeOverlay.setVisibility(View.GONE);
+    }
+
+    private String getTimeBasedGreeting(String name) {
+        Calendar c = Calendar.getInstance();
+        int timeOfDay = c.get(Calendar.HOUR_OF_DAY);
+
+        if (timeOfDay >= 0 && timeOfDay < 12) {
+            return String.format("Good morning,\n%s", name);
+        } else if (timeOfDay >= 12 && timeOfDay < 16) {
+            return String.format("Good afternoon,\n%s", name);
+        } else if (timeOfDay >= 16 && timeOfDay < 21) {
+            return String.format("Good evening,\n%s", name);
+        } else {
+            return String.format("Good night,\n%s", name);
+        }
     }
 
     private void setupClickListeners() {
@@ -181,6 +254,7 @@ public class LoginActivity extends AppCompatActivity {
         });
     }
 
+    // Reset state when starting face login
     private void startFaceLogin() {
         if (!allPermissionsGranted()) {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, PERMISSION_REQUEST_CODE);
@@ -188,15 +262,35 @@ public class LoginActivity extends AppCompatActivity {
         }
 
         if (lastUserId == null || lastUserId == -1) {
-            Toast.makeText(this, "Please login manually first to enable face login", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Please login manually first to enable face login",
+                    Toast.LENGTH_LONG).show();
             loginChoiceLayout.setVisibility(View.GONE);
             manualLoginLayout.setVisibility(View.VISIBLE);
             return;
         }
 
-        loginChoiceLayout.setVisibility(View.GONE);
-        faceLoginLayout.setVisibility(View.VISIBLE);
-        startCamera();
+        // Check if user is locked out before starting
+        new Thread(() -> {
+            Result<Boolean> lockedResult = securitySettingsRepository.isUserLocked(lastUserId);
+            runOnUiThread(() -> {
+                if (lockedResult.isSuccess() && lockedResult.getData()) {
+                    Toast.makeText(LoginActivity.this,
+                            "Account temporarily locked. Please try again later.",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+
+                // Reset all state flags
+                livenessCheckPassed = false;
+                isAuthenticating = false;
+                isAuthenticationSuccessful = false;
+                currentAttempt = 0;
+
+                loginChoiceLayout.setVisibility(View.GONE);
+                faceLoginLayout.setVisibility(View.VISIBLE);
+                startCamera();
+            });
+        }).start();
     }
 
     private void startCamera() {
@@ -216,6 +310,7 @@ public class LoginActivity extends AppCompatActivity {
     }
 
     private void bindCameraUseCases(ProcessCameraProvider cameraProvider) {
+        this.cameraProvider = cameraProvider;
         Preview preview = new Preview.Builder().build();
 
         CameraSelector cameraSelector = new CameraSelector.Builder()
@@ -280,6 +375,35 @@ public class LoginActivity extends AppCompatActivity {
     }
 
     private void processLivenessAndAuthentication(Face face, Image image, int rotation) {
+        // Skip processing if authentication was successful
+        if (isAuthenticationSuccessful) {
+            image.close();
+            return;
+        }
+
+        // Skip if no face enrollment
+        if (!hasFaceEnrollment) {
+            updateStatus("Face not enrolled. Please enroll face first.");
+            setNormalOverlay();
+            return;
+        }
+
+        // Check lockout
+        if (securitySettings != null) {
+            new Thread(() -> {
+                Result<Boolean> lockedResult = securitySettingsRepository.isUserLocked(lastUserId);
+                if (lockedResult.isSuccess() && lockedResult.getData()) {
+                    runOnUiThread(() -> {
+                        updateStatus("Account temporarily locked. Please try again later.");
+                        setNormalOverlay();
+                    });
+                    return;
+                }
+            }).start();
+        }
+
+        checkFaceQuality(face);
+
         if (!livenessCheckPassed) {
             LivenessDetector.LivenessResult result = livenessDetector.processFrame(face);
             updateStatus(result.message);
@@ -287,37 +411,98 @@ public class LoginActivity extends AppCompatActivity {
             if (result.state == LivenessDetector.LivenessState.COMPLETED) {
                 livenessCheckPassed = true;
                 setScanningOverlay();
-                // Extract face and authenticate
-                Bitmap faceBitmap = FacePreprocessor.extractFace(image, face.getBoundingBox(), rotation);
-                if (faceBitmap != null) {
-                    authenticateUser(faceBitmap);
-                }
+                isAuthenticating = true;
             } else {
                 setNormalOverlay();
+            }
+        } else if (isAuthenticating &&
+                (securitySettings == null || currentAttempt < securitySettings.getMaxFailedAttempts())) {
+
+            // Check if enough time has passed since last attempt
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastAuthAttemptTime < AUTH_ATTEMPT_DELAY) {
+                return;
+            }
+            lastAuthAttemptTime = currentTime;
+
+            setScanningOverlay();
+            Bitmap faceBitmap = FacePreprocessor.extractFace(image, face.getBoundingBox(), rotation);
+            if (faceBitmap != null) {
+                authenticateUser(faceBitmap);
             }
         }
     }
 
-    private void authenticateUser(Bitmap faceBitmap) {
-        if (lastUserId == null || lastUserId == -1) {
-            updateStatus("Please login manually first to enable face login");
-            return;
+    private void checkFaceQuality(Face face) {
+        float rotY = face.getHeadEulerAngleY();  // Side-to-side rotation
+        float rotZ = face.getHeadEulerAngleZ();  // Tilt
+
+        if (Math.abs(rotY) < 15 && Math.abs(rotZ) < 15) {
+            setScanningOverlay();
+            isAuthenticating = true;  // Enable authentication when face is in position
+        } else {
+            isAuthenticating = false;  // Disable authentication when face is out of position
+            setNormalOverlay();
+            StringBuilder guidance = new StringBuilder("Please ");
+            if (Math.abs(rotY) >= 15) {
+                guidance.append("face the camera directly");
+            }
+            if (Math.abs(rotZ) >= 15) {
+                if (guidance.length() > 7) guidance.append(" and ");
+                guidance.append("keep your head level");
+            }
+            updateStatus(guidance.toString());
         }
+    }
+
+    private void authenticateUser(Bitmap faceBitmap) {
+        if (lastUserId == null || lastUserId == -1 || isAuthenticationSuccessful) {
+            return; // Skip if already authenticated or no user ID
+        }
+
+        currentAttempt++;
 
         new Thread(() -> {
             try {
-                // Generate embedding directly using FaceRecognition
                 float[] newEmbedding = faceRecognition.generateEmbedding(faceBitmap);
 
-                // FaceAuthenticator now handles all authentication
                 if (faceAuthenticator.authenticate(lastUserId, newEmbedding)) {
+                    // Set flag to prevent further authentication attempts
+                    isAuthenticationSuccessful = true;
+
+                    // Stop camera immediately after successful authentication
+                    runOnUiThread(() -> {
+                        if (cameraProvider != null) {
+                            cameraProvider.unbindAll();
+                        }
+                    });
+
+                    // Reset failed attempts on successful login
+                    securitySettingsRepository.resetFailedAttempts(lastUserId);
+
                     Result<User> userResult = userRepository.getUserById(lastUserId);
                     if (userResult.isSuccess()) {
                         handleSuccessfulLogin(userResult.getData());
                         return;
                     }
+                } else {
+                    // Increment failed attempts in database
+                    securitySettingsRepository.incrementFailedAttempts(lastUserId);
                 }
-                updateStatus("Face authentication failed");
+
+                int maxAttempts = securitySettings != null ?
+                        securitySettings.getMaxFailedAttempts() :
+                        SecuritySettingsRepository.DEFAULT_MAX_ATTEMPTS;
+
+                // Handle failed attempt
+                if (currentAttempt >= maxAttempts) {
+                    isAuthenticating = false;
+                    updateStatus("Max attempts reached. Account temporarily locked.");
+                    setNormalOverlay();
+                } else {
+                    updateStatus(String.format("Authentication failed (Attempt %d/%d). Please try again.",
+                            currentAttempt, maxAttempts));
+                }
 
             } catch (Exception e) {
                 Log.e(TAG, "Authentication error", e);
@@ -363,15 +548,65 @@ public class LoginActivity extends AppCompatActivity {
     }
 
     private void handleSuccessfulLogin(User user) {
+        // Ensure we only show the welcome screen once
+        if (!isAuthenticationSuccessful) {
+            return;
+        }
+
         runOnUiThread(() -> {
-            sessionManager.createLoginSession(
-                    user.getUserId(),
-                    user.getEmail(),
-                    user.getName(),
-                    user.getRole()
-            );
-            startActivity(new Intent(LoginActivity.this, DashboardActivity.class));
-            finish();
+            // First fade out the face login views
+            View[] viewsToHide = {
+                    previewView,
+                    overlayView,
+                    findViewById(R.id.statusLayout),
+                    findViewById(R.id.buttonBackToChoiceFromFace)
+            };
+
+            for (View view : viewsToHide) {
+                if (view != null) {
+                    view.animate()
+                            .alpha(0f)
+                            .setDuration(200)
+                            .start();
+                }
+            }
+
+            // After camera views fade out, show welcome screen
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                // Hide camera views completely
+                for (View view : viewsToHide) {
+                    if (view != null) {
+                        view.setVisibility(View.GONE);
+                    }
+                }
+
+                // Show and animate welcome overlay
+                welcomeOverlay.setVisibility(View.VISIBLE);
+                welcomeOverlay.setAlpha(0f);
+                welcomeText.setText(getTimeBasedGreeting(user.getName()));
+
+                welcomeOverlay.animate()
+                        .alpha(1f)
+                        .setDuration(300)
+                        .withEndAction(() -> {
+                            // After welcome delay, transition to dashboard
+                            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                                sessionManager.createLoginSession(
+                                        user.getUserId(),
+                                        user.getEmail(),
+                                        user.getName(),
+                                        user.getRole()
+                                );
+
+                                // Start dashboard with fade transition
+                                Intent intent = new Intent(LoginActivity.this, DashboardActivity.class);
+                                startActivity(intent);
+                                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+                                finish();
+                            }, WELCOME_DELAY);
+                        })
+                        .start();
+            }, 200); // Wait for camera views to fade out
         });
     }
 
@@ -414,13 +649,34 @@ public class LoginActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        // Unbind camera use cases
+        if (cameraProvider != null) {
+            cameraProvider.unbindAll();
+        }
+
+        // Reset all views' alpha values
+        if (previewView != null) previewView.setAlpha(1f);
+        if (overlayView != null) overlayView.setAlpha(1f);
+        if (findViewById(R.id.statusLayout) != null) findViewById(R.id.statusLayout).setAlpha(1f);
+        if (findViewById(R.id.buttonBackToChoiceFromFace) != null) {
+            findViewById(R.id.buttonBackToChoiceFromFace).setAlpha(1f);
+        }
+        if (welcomeOverlay != null) welcomeOverlay.setAlpha(1f);
+
+        // Reset all state flags
         livenessDetector.reset();
         livenessCheckPassed = false;
+        isAuthenticating = false;
+        isAuthenticationSuccessful = false;
+        currentAttempt = 0;
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (cameraProvider != null) {
+            cameraProvider.unbindAll();
+        }
         if (faceRecognition != null) {
             faceRecognition.close();
         }
