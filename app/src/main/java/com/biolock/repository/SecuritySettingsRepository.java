@@ -3,9 +3,10 @@ package com.biolock.repository;
 import android.util.Log;
 import com.biolock.database.DatabaseHelper;
 import com.biolock.database.dao.SecuritySettingsDao;
+import com.biolock.model.FaceRecognitionLog;
 import com.biolock.model.SecuritySettings;
 import java.sql.SQLException;
-import java.sql.Timestamp;
+import java.util.List;
 
 public class SecuritySettingsRepository {
     private static final String TAG = "SecuritySettingsRepo";
@@ -31,6 +32,29 @@ public class SecuritySettingsRepository {
         }
     }
 
+    public Result<SecuritySettings> updateSettings(SecuritySettings settings) {
+        try {
+            ensureInitialized();
+            Log.d(TAG, "Updating security settings for user: " + settings.getUserId());
+
+            if (!validateSettings(settings)) {
+                String error = "Invalid settings values. Max attempts must be between 1 and " +
+                        MAX_ALLOWED_ATTEMPTS + ", lockout duration must be between " +
+                        LOCKOUT_DURATION_INTERVAL + " and " + MAX_LOCKOUT_DURATION + " minutes";
+                Log.e(TAG, error);
+                return Result.error(new IllegalArgumentException(error));
+            }
+
+            securitySettingsDao.insertOrUpdate(settings);
+            Log.d(TAG, "Successfully updated security settings");
+
+            return Result.success(settings);
+        } catch (SQLException e) {
+            Log.e(TAG, "Error updating security settings", e);
+            return Result.error(e);
+        }
+    }
+
     public Result<SecuritySettings> getSettings(long userId) {
         try {
             ensureInitialized();
@@ -49,68 +73,35 @@ public class SecuritySettingsRepository {
         }
     }
 
-    public Result<SecuritySettings> updateSettings(SecuritySettings settings) {
-        try {
-            ensureInitialized();
-            Log.d(TAG, "Updating security settings for user: " + settings.getUserId());
-
-            if (!validateSettings(settings)) {
-                String error = "Invalid settings: maxAttempts must be between 1 and " +
-                        MAX_ALLOWED_ATTEMPTS + ", lockoutDuration must be between " +
-                        LOCKOUT_DURATION_INTERVAL + " and " + MAX_LOCKOUT_DURATION;
-                Log.e(TAG, error);
-                return Result.error(new IllegalArgumentException(error));
-            }
-
-            securitySettingsDao.insertOrUpdate(settings);
-            Log.d(TAG, "Successfully updated security settings");
-            return Result.success(settings);
-        } catch (SQLException e) {
-            Log.e(TAG, "Error updating security settings", e);
-            return Result.error(e);
-        }
-    }
-
     public Result<Boolean> isUserLocked(long userId) {
         try {
             ensureInitialized();
             SecuritySettings settings = securitySettingsDao.findByUserId(userId);
-            if (settings == null || settings.getLastFailedAttempt() == null) {
+            if (settings == null) {
                 return Result.success(false);
             }
 
-            long lockoutMillis = settings.getLockoutDurationMins() * 60 * 1000L;
-            long lastFailedMillis = settings.getLastFailedAttempt().getTime();
-            long currentMillis = System.currentTimeMillis();
+            // Get failed login attempts count from FaceRecognitionLogsRepository
+            FaceRecognitionLogRepository logsRepository = new FaceRecognitionLogRepository();
+            Result<List<FaceRecognitionLog>> logsResult = logsRepository.getUserLogs(userId);
 
-            boolean isLocked = settings.getFailedAttemptsCount() >= settings.getMaxFailedAttempts() &&
-                    (currentMillis - lastFailedMillis) < lockoutMillis;
+            if (!logsResult.isSuccess()) {
+                return Result.success(false);
+            }
 
-            return Result.success(isLocked);
+            List<FaceRecognitionLog> recentLogs = logsResult.getData();
+            long recentFailures = recentLogs.stream()
+                    .filter(log -> !log.isSuccess())
+                    .filter(log -> log.getActionType() == FaceRecognitionLog.ActionType.LOGIN)
+                    .filter(log -> {
+                        long diffMinutes = (System.currentTimeMillis() - log.getAttemptTimestamp().getTime()) / (60 * 1000);
+                        return diffMinutes < settings.getLockoutDurationMins();
+                    })
+                    .count();
+
+            return Result.success(recentFailures >= settings.getMaxFailedAttempts());
         } catch (SQLException e) {
             Log.e(TAG, "Error checking user lock status", e);
-            return Result.error(e);
-        }
-    }
-
-    public Result<SecuritySettings> incrementFailedAttempts(long userId) {
-        try {
-            ensureInitialized();
-            securitySettingsDao.updateFailedAttempt(userId);
-            return getSettings(userId);
-        } catch (SQLException e) {
-            Log.e(TAG, "Error incrementing failed attempts", e);
-            return Result.error(e);
-        }
-    }
-
-    public Result<SecuritySettings> resetFailedAttempts(long userId) {
-        try {
-            ensureInitialized();
-            securitySettingsDao.resetFailedAttempts(userId);
-            return getSettings(userId);
-        } catch (SQLException e) {
-            Log.e(TAG, "Error resetting failed attempts", e);
             return Result.error(e);
         }
     }
@@ -120,8 +111,6 @@ public class SecuritySettingsRepository {
         settings.setUserId(userId);
         settings.setMaxFailedAttempts(DEFAULT_MAX_ATTEMPTS);
         settings.setLockoutDurationMins(DEFAULT_LOCKOUT_DURATION);
-        settings.setFailedAttemptsCount(0);
-        settings.setLastFailedAttempt(null);
         return settings;
     }
 

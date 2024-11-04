@@ -34,44 +34,6 @@ public class SecuritySettingsDao {
         }
     }
 
-    public void updateFailedAttempt(long userId) throws SQLException {
-        Connection conn = null;
-        try {
-            conn = dbHelper.getConnection();
-            String sql = "UPDATE user_security_settings SET " +
-                    "failed_attempts_count = failed_attempts_count + 1, " +
-                    "last_failed_attempt = CURRENT_TIMESTAMP " +
-                    "WHERE user_id = ?";
-
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-
-                pstmt.setLong(1, userId);
-                pstmt.executeUpdate();
-            }
-        } finally {
-            dbHelper.releaseConnection(conn);
-        }
-    }
-
-    public void resetFailedAttempts(long userId) throws SQLException {
-        Connection conn = null;
-        try {
-            conn = dbHelper.getConnection();
-            String sql = "UPDATE user_security_settings SET " +
-                    "failed_attempts_count = 0, " +
-                    "last_failed_attempt = NULL " +
-                    "WHERE user_id = ?";
-
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-
-                pstmt.setLong(1, userId);
-                pstmt.executeUpdate();
-            }
-        } finally {
-            dbHelper.releaseConnection(conn);
-        }
-    }
-
     public SecuritySettings findByUserId(long userId) throws SQLException {
         Connection conn = null;
         try {

@@ -7,11 +7,12 @@ import com.biolock.repository.Result;
 
 public class FaceAuthenticator {
     private static final String TAG = "FaceAuthenticator";
-    private static final float SIMILARITY_THRESHOLD = 0.70f;
+    private static final float SIMILARITY_THRESHOLD = 0.80f;
 
     private final FaceEmbeddingRepository repository;
     private final LivenessDetector livenessDetector;
     private final FaceRecognition faceRecognition;
+    private float lastSimilarityScore;
 
     public FaceAuthenticator(FaceEmbeddingRepository repository, FaceRecognition faceRecognition) {
         this.repository = repository;
@@ -40,12 +41,15 @@ public class FaceAuthenticator {
             return false;
         }
 
-        // Calculate similarity and log score
-        float similarity = faceRecognition.calculateSimilarity(newEmbedding, storedEmbeddingArray);
-        Log.d(TAG, String.format("Similarity Score: %.4f (Threshold: %.4f)",
-                similarity, SIMILARITY_THRESHOLD));
+        // Calculate similarity and store score
+        lastSimilarityScore = faceRecognition.calculateSimilarity(newEmbedding, storedEmbeddingArray);
+        Log.d(TAG, "Similarity Score: " + lastSimilarityScore + " (Threshold: " + SIMILARITY_THRESHOLD + ")");
 
-        return similarity >= SIMILARITY_THRESHOLD;
+        return lastSimilarityScore >= SIMILARITY_THRESHOLD;
+    }
+
+    public float getLastSimilarityScore() {
+        return lastSimilarityScore;
     }
 
     public LivenessDetector getLivenessDetector() {

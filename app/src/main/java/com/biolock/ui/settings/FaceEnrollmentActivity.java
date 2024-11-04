@@ -28,7 +28,9 @@ import androidx.core.content.ContextCompat;
 
 import com.biolock.R;
 import com.biolock.model.FaceEmbedding;
+import com.biolock.model.FaceRecognitionLog;
 import com.biolock.repository.FaceEmbeddingRepository;
+import com.biolock.repository.FaceRecognitionLogRepository;
 import com.biolock.repository.Result;
 import com.biolock.utils.FacePreprocessor;
 import com.biolock.utils.FaceRecognition;
@@ -252,6 +254,9 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
         progressDialog.setCancelable(false);
         progressDialog.show();
 
+        FaceRecognitionLogRepository logsRepository = new FaceRecognitionLogRepository();
+        long userId = sessionManager.getUserId();
+
         imageCapture.takePicture(ContextCompat.getMainExecutor(this),
                 new ImageCapture.OnImageCapturedCallback() {
                     @Override
@@ -259,6 +264,7 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
                         try {
                             Image image = imageProxy.getImage();
                             if (image == null) {
+                                logEnrollmentAttempt(logsRepository, userId, false, 0.0f);
                                 handleError("Failed to capture image", progressDialog);
                                 imageProxy.close();
                                 return;
@@ -282,18 +288,13 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
                                                     );
 
                                                     if (faceBitmap == null) {
+                                                        logEnrollmentAttempt(logsRepository, userId, false, 0.0f);
                                                         runOnUiThread(() -> handleError("Failed to process face image", progressDialog));
                                                         return;
                                                     }
 
                                                     // Generate embedding using FaceRecognition
                                                     float[] embedding = faceRecognition.generateEmbedding(faceBitmap);
-
-                                                    // Log embedding values for debugging
-                                                    Log.d(TAG, "Raw embedding first 5 values: " +
-                                                            Arrays.toString(Arrays.copyOfRange(embedding, 0, 5)));
-
-                                                    // Convert to bytes using FaceRecognition
                                                     byte[] embeddingBytes = faceRecognition.embeddingToBytes(embedding);
 
                                                     // Calculate confidence score
@@ -301,33 +302,41 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
 
                                                     // Create embedding object
                                                     FaceEmbedding faceEmbedding = new FaceEmbedding();
-                                                    faceEmbedding.setUserId(sessionManager.getUserId());
+                                                    faceEmbedding.setUserId(userId);
                                                     faceEmbedding.setEmbeddingData(embeddingBytes);
                                                     faceEmbedding.setConfidenceScore(confidenceScore);
 
                                                     // Save to database
                                                     Result<Long> result = faceEmbeddingRepository.saveFaceEmbedding(faceEmbedding);
+
+                                                    // Log the enrollment attempt
+                                                    logEnrollmentAttempt(logsRepository, userId, result.isSuccess(), (float)confidenceScore);
+
                                                     runOnUiThread(() -> handleEnrollmentResult(result, progressDialog));
 
                                                 } catch (Exception e) {
                                                     Log.e(TAG, "Error processing face", e);
+                                                    logEnrollmentAttempt(logsRepository, userId, false, 0.0f);
                                                     runOnUiThread(() -> handleError("Error processing face: " + e.getMessage(), progressDialog));
                                                 } finally {
                                                     imageProxy.close();
                                                 }
                                             }).start();
                                         } else {
+                                            logEnrollmentAttempt(logsRepository, userId, false, 0.0f);
                                             handleError("No face detected", progressDialog);
                                             imageProxy.close();
                                         }
                                     })
                                     .addOnFailureListener(e -> {
+                                        logEnrollmentAttempt(logsRepository, userId, false, 0.0f);
                                         handleError("Face detection failed: " + e.getMessage(), progressDialog);
                                         imageProxy.close();
                                     });
 
                         } catch (Exception e) {
                             Log.e(TAG, "Error in capture process", e);
+                            logEnrollmentAttempt(logsRepository, userId, false, 0.0f);
                             handleError("Error capturing image: " + e.getMessage(), progressDialog);
                             imageProxy.close();
                         }
@@ -336,9 +345,30 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
                     @Override
                     public void onError(@NonNull ImageCaptureException e) {
                         Log.e(TAG, "Image capture failed", e);
+                        logEnrollmentAttempt(logsRepository, userId, false, 0.0f);
                         handleError("Failed to capture image: " + e.getMessage(), progressDialog);
                     }
                 });
+    }
+
+    private void logEnrollmentAttempt(FaceRecognitionLogRepository logsRepository, long userId,
+                                      boolean success, float similarity) {
+        try {
+            FaceRecognitionLog log = new FaceRecognitionLog();
+            log.setUserId(userId);
+            log.setSuccess(success);
+            log.setSimilarity(similarity);
+            log.setDeviceInfo(android.os.Build.MODEL);  // Device model
+            log.setIpAddress("127.0.0.1");  // Local device
+            log.setActionType(FaceRecognitionLog.ActionType.ENROLLMENT);
+
+            Result<Long> result = logsRepository.logAttempt(log);
+            if (!result.isSuccess()) {
+                Log.e(TAG, "Failed to log enrollment attempt: " + result.getError().getMessage());
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error logging enrollment attempt", e);
+        }
     }
 
     private double calculateConfidence(Face face) {

@@ -3,13 +3,19 @@ package com.biolock.model;
 import java.sql.Timestamp;
 
 public class FaceRecognitionLog {
+    public enum ActionType {
+        ENROLLMENT,
+        LOGIN
+    }
+
     private long logId;
     private long userId;
     private Timestamp attemptTimestamp;
     private boolean success;
-    private double score;
+    private float similarity;
     private String deviceInfo;
     private String ipAddress;
+    private ActionType actionType;
 
     // Getters and setters
     public long getLogId() { return logId; }
@@ -24,12 +30,15 @@ public class FaceRecognitionLog {
     public boolean isSuccess() { return success; }
     public void setSuccess(boolean success) { this.success = success; }
 
-    public double getScore() { return score; }
-    public void setScore(double score) { this.score = score; }
+    public float getSimilarity() { return similarity; }
+    public void setSimilarity(float similarity) { this.similarity = similarity; }
 
     public String getDeviceInfo() { return deviceInfo; }
     public void setDeviceInfo(String deviceInfo) { this.deviceInfo = deviceInfo; }
 
     public String getIpAddress() { return ipAddress; }
     public void setIpAddress(String ipAddress) { this.ipAddress = ipAddress; }
+
+    public ActionType getActionType() { return actionType; }
+    public void setActionType(ActionType actionType) { this.actionType = actionType; }
 }

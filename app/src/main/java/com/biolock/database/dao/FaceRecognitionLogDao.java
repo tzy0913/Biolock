@@ -14,49 +14,83 @@ public class FaceRecognitionLogDao {
     }
 
     public long insert(FaceRecognitionLog log) throws SQLException {
-        String sql = "INSERT INTO face_recognition_logs (user_id, success, score, device_info, ip_address) " +
-                "VALUES (?, ?, ?, ?, ?)";
+        Connection conn = null;
+        try {
+            conn = dbHelper.getConnection();
+            String sql = "INSERT INTO face_recognition_logs (user_id, success, similarity, device_info, " +
+                    "ip_address, action_type) VALUES (?, ?, ?, ?, ?, ?)";
 
-        try (Connection conn = dbHelper.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            try (PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                pstmt.setLong(1, log.getUserId());
+                pstmt.setBoolean(2, log.isSuccess());
+                pstmt.setFloat(3, log.getSimilarity());
+                pstmt.setString(4, log.getDeviceInfo());
+                pstmt.setString(5, log.getIpAddress());
+                pstmt.setString(6, log.getActionType().name());
 
-            pstmt.setLong(1, log.getUserId());
-            pstmt.setBoolean(2, log.isSuccess());
-            pstmt.setDouble(3, log.getScore());
-            pstmt.setString(4, log.getDeviceInfo());
-            pstmt.setString(5, log.getIpAddress());
+                int affectedRows = pstmt.executeUpdate();
+                if (affectedRows == 0) {
+                    throw new SQLException("Creating face recognition log failed, no rows affected.");
+                }
 
-            int affectedRows = pstmt.executeUpdate();
-            if (affectedRows == 0) {
-                throw new SQLException("Creating face recognition log failed, no rows affected.");
-            }
-
-            try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
-                if (generatedKeys.next()) {
-                    return generatedKeys.getLong(1);
-                } else {
-                    throw new SQLException("Creating face recognition log failed, no ID obtained.");
+                try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
+                    if (generatedKeys.next()) {
+                        return generatedKeys.getLong(1);
+                    } else {
+                        throw new SQLException("Creating face recognition log failed, no ID obtained.");
+                    }
                 }
             }
+        } finally {
+            dbHelper.releaseConnection(conn);
         }
     }
 
     public List<FaceRecognitionLog> findByUserId(long userId) throws SQLException {
-        String sql = "SELECT * FROM face_recognition_logs WHERE user_id = ? ORDER BY attempt_timestamp DESC";
-        List<FaceRecognitionLog> logs = new ArrayList<>();
+        Connection conn = null;
+        try {
+            conn = dbHelper.getConnection();
+            String sql = "SELECT * FROM face_recognition_logs WHERE user_id = ? ORDER BY attempt_timestamp DESC";
+            List<FaceRecognitionLog> logs = new ArrayList<>();
 
-        try (Connection conn = dbHelper.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setLong(1, userId);
 
-            pstmt.setLong(1, userId);
-
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    logs.add(mapResultSetToFaceRecognitionLog(rs));
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    while (rs.next()) {
+                        logs.add(mapResultSetToFaceRecognitionLog(rs));
+                    }
                 }
             }
+            return logs;
+        } finally {
+            dbHelper.releaseConnection(conn);
         }
-        return logs;
+    }
+
+    public int countRecentFailedAttempts(long userId, String ipAddress, int minutes) throws SQLException {
+        Connection conn = null;
+        try {
+            conn = dbHelper.getConnection();
+            String sql = "SELECT COUNT(*) FROM face_recognition_logs " +
+                    "WHERE user_id = ? AND ip_address = ? AND success = 0 AND action_type = 'LOGIN' " +
+                    "AND attempt_timestamp >= DATE_SUB(NOW(), INTERVAL ? MINUTE)";
+
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setLong(1, userId);
+                pstmt.setString(2, ipAddress);
+                pstmt.setInt(3, minutes);
+
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        return rs.getInt(1);
+                    }
+                    return 0;
+                }
+            }
+        } finally {
+            dbHelper.releaseConnection(conn);
+        }
     }
 
     private FaceRecognitionLog mapResultSetToFaceRecognitionLog(ResultSet rs) throws SQLException {
@@ -65,9 +99,10 @@ public class FaceRecognitionLogDao {
         log.setUserId(rs.getLong("user_id"));
         log.setAttemptTimestamp(rs.getTimestamp("attempt_timestamp"));
         log.setSuccess(rs.getBoolean("success"));
-        log.setScore(rs.getDouble("score"));
+        log.setSimilarity(rs.getFloat("similarity"));
         log.setDeviceInfo(rs.getString("device_info"));
         log.setIpAddress(rs.getString("ip_address"));
+        log.setActionType(FaceRecognitionLog.ActionType.valueOf(rs.getString("action_type")));
         return log;
     }
 }
