@@ -578,20 +578,50 @@ public class LoginActivity extends AppCompatActivity {
         new Thread(() -> {
             try {
                 Result<User> result = userRepository.login(email, password);
-                runOnUiThread(() -> {
-                    progress.dismiss();
-                    if (result.isSuccess()) {
-                        handleSuccessfulLogin(result.getData());
-                    } else {
-                        Toast.makeText(LoginActivity.this, result.getError().getMessage(),
-                                Toast.LENGTH_SHORT).show();
-                    }
-                });
+
+                if (result.isSuccess()) {
+                    User user = result.getData();
+
+                    // Log the manual login attempt
+                    FaceRecognitionLogRepository logsRepository = new FaceRecognitionLogRepository();
+                    FaceRecognitionLog log = new FaceRecognitionLog();
+                    log.setUserId(user.getUserId());
+                    log.setSuccess(true);
+                    log.setSimilarity(1.0f); // Perfect score for manual login
+                    log.setDeviceInfo(android.os.Build.MODEL);
+                    log.setIpAddress("127.0.0.1");
+                    log.setActionType(FaceRecognitionLog.ActionType.LOGIN);
+                    logsRepository.logAttempt(log);
+
+                    // Reset any existing failed face login attempts
+                    currentAttempt = 0;
+                    livenessCheckPassed = false;
+                    isAuthenticating = false;
+                    isAuthInProgress = false;
+
+                    runOnUiThread(() -> {
+                        progress.dismiss();
+                        handleManualLoginSuccess(user);
+                    });
+                } else {
+                    runOnUiThread(() -> {
+                        progress.dismiss();
+                        // Show error message
+                        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+                        builder.setTitle("Login Failed")
+                                .setMessage("Invalid email or password. Please try again.")
+                                .setPositiveButton("OK", (dialog, which) -> dialog.dismiss())
+                                .show();
+                    });
+                }
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     progress.dismiss();
-                    Toast.makeText(LoginActivity.this,
-                            "Login failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    AlertDialog.Builder builder = new AlertDialog.Builder(this);
+                    builder.setTitle("Login Error")
+                            .setMessage("Error during login: " + e.getMessage())
+                            .setPositiveButton("OK", (dialog, which) -> dialog.dismiss())
+                            .show();
                 });
             }
         }).start();
@@ -621,43 +651,67 @@ public class LoginActivity extends AppCompatActivity {
                 }
             }
 
-            // After camera views fade out, show welcome screen
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                // Hide camera views completely
-                for (View view : viewsToHide) {
-                    if (view != null) {
-                        view.setVisibility(View.GONE);
-                    }
-                }
-
-                // Show and animate welcome overlay
-                welcomeOverlay.setVisibility(View.VISIBLE);
-                welcomeOverlay.setAlpha(0f);
-                welcomeText.setText(getTimeBasedGreeting(user.getName()));
-
-                welcomeOverlay.animate()
-                        .alpha(1f)
-                        .setDuration(300)
-                        .withEndAction(() -> {
-                            // After welcome delay, transition to dashboard
-                            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                                sessionManager.createLoginSession(
-                                        user.getUserId(),
-                                        user.getEmail(),
-                                        user.getName(),
-                                        user.getRole()
-                                );
-
-                                // Start dashboard with fade transition
-                                Intent intent = new Intent(LoginActivity.this, DashboardActivity.class);
-                                startActivity(intent);
-                                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
-                                finish();
-                            }, WELCOME_DELAY);
-                        })
-                        .start();
-            }, 200); // Wait for camera views to fade out
+            showWelcomeAndTransition(user);
         });
+    }
+
+    private void handleManualLoginSuccess(User user) {
+        // If there was a face login lockout, show a message about the reset
+        if (currentAttempt >= (securitySettings != null ?
+                securitySettings.getMaxFailedAttempts() :
+                SecuritySettingsRepository.DEFAULT_MAX_ATTEMPTS)) {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("Account Unlocked")
+                    .setMessage("Manual login successful. Face login attempts have been reset.")
+                    .setPositiveButton("OK", (dialog, which) -> {
+                        dialog.dismiss();
+                        fadeOutAndShowWelcome(user);
+                    })
+                    .show();
+        } else {
+            fadeOutAndShowWelcome(user);
+        }
+    }
+
+    private void fadeOutAndShowWelcome(User user) {
+        // Fade out manual login layout
+        manualLoginLayout.animate()
+                .alpha(0f)
+                .setDuration(200)
+                .withEndAction(() -> {
+                    manualLoginLayout.setVisibility(View.GONE);
+                    showWelcomeAndTransition(user);
+                })
+                .start();
+    }
+
+    private void showWelcomeAndTransition(User user) {
+        // Show and animate welcome overlay
+        welcomeOverlay.setVisibility(View.VISIBLE);
+        welcomeOverlay.setAlpha(0f);
+        welcomeText.setText(getTimeBasedGreeting(user.getName()));
+
+        welcomeOverlay.animate()
+                .alpha(1f)
+                .setDuration(300)
+                .withEndAction(() -> {
+                    // After welcome delay, transition to dashboard
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        sessionManager.createLoginSession(
+                                user.getUserId(),
+                                user.getEmail(),
+                                user.getName(),
+                                user.getRole()
+                        );
+
+                        // Start dashboard with fade transition
+                        Intent intent = new Intent(LoginActivity.this, DashboardActivity.class);
+                        startActivity(intent);
+                        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+                        finish();
+                    }, WELCOME_DELAY);
+                })
+                .start();
     }
 
     private void updateStatus(String message) {

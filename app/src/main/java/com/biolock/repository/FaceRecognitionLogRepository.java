@@ -8,7 +8,7 @@ import java.sql.SQLException;
 import java.util.List;
 
 public class FaceRecognitionLogRepository {
-    private static final String TAG = "FaceRecognitionLogsRepo";
+    private static final String TAG = "FaceRecognitionLogRepository";
     private final DatabaseHelper dbHelper;
     private final FaceRecognitionLogDao faceRecognitionLogDao;
 

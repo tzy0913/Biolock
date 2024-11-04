@@ -6,7 +6,9 @@ import com.biolock.database.dao.SecuritySettingsDao;
 import com.biolock.model.FaceRecognitionLog;
 import com.biolock.model.SecuritySettings;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.util.List;
+import java.util.Optional;
 
 public class SecuritySettingsRepository {
     private static final String TAG = "SecuritySettingsRepo";
@@ -81,18 +83,41 @@ public class SecuritySettingsRepository {
                 return Result.success(false);
             }
 
-            // Get failed login attempts count from FaceRecognitionLogsRepository
-            FaceRecognitionLogRepository logsRepository = new FaceRecognitionLogRepository();
-            Result<List<FaceRecognitionLog>> logsResult = logsRepository.getUserLogs(userId);
+            // Get failed login attempts from FaceRecognitionLogsRepository
+            FaceRecognitionLogRepository faceRecognitionLogRepository = new FaceRecognitionLogRepository();
+            Result<List<FaceRecognitionLog>> faceRecognitionLog = faceRecognitionLogRepository.getUserLogs(userId);
 
-            if (!logsResult.isSuccess()) {
+            if (!faceRecognitionLog.isSuccess()) {
                 return Result.success(false);
             }
 
-            List<FaceRecognitionLog> recentLogs = logsResult.getData();
+            List<FaceRecognitionLog> recentLogs = faceRecognitionLog.getData();
+
+            // Find the most recent successful login (either manual or face)
+            Optional<FaceRecognitionLog> lastSuccessfulLogin = recentLogs.stream()
+                    .filter(log -> log.isSuccess() && log.getActionType() == FaceRecognitionLog.ActionType.LOGIN)
+                    .findFirst();
+
+            if (!lastSuccessfulLogin.isPresent()) {
+                // No successful logins yet, check all failed attempts
+                long recentFailures = recentLogs.stream()
+                        .filter(log -> !log.isSuccess() && log.getActionType() == FaceRecognitionLog.ActionType.LOGIN)
+                        .filter(log -> {
+                            long diffMinutes = (System.currentTimeMillis() - log.getAttemptTimestamp().getTime()) / (60 * 1000);
+                            return diffMinutes < settings.getLockoutDurationMins();
+                        })
+                        .count();
+
+                return Result.success(recentFailures >= settings.getMaxFailedAttempts());
+            }
+
+            // Get timestamp of last successful login
+            Timestamp lastSuccessTime = lastSuccessfulLogin.get().getAttemptTimestamp();
+
+            // Count failed attempts since last successful login
             long recentFailures = recentLogs.stream()
-                    .filter(log -> !log.isSuccess())
-                    .filter(log -> log.getActionType() == FaceRecognitionLog.ActionType.LOGIN)
+                    .filter(log -> !log.isSuccess() && log.getActionType() == FaceRecognitionLog.ActionType.LOGIN)
+                    .filter(log -> log.getAttemptTimestamp().after(lastSuccessTime))
                     .filter(log -> {
                         long diffMinutes = (System.currentTimeMillis() - log.getAttemptTimestamp().getTime()) / (60 * 1000);
                         return diffMinutes < settings.getLockoutDurationMins();
