@@ -84,7 +84,7 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     // MySQL Connector
-    implementation("mysql:mysql-connector-java:8.0.33")
+    implementation("mysql:mysql-connector-java:5.1.49")
 
     // SSH Library for Tunneling
     implementation("com.jcraft:jsch:0.1.55")
