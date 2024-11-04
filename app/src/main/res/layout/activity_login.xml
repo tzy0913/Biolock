@@ -29,6 +29,7 @@
             android:layout_height="150dp"
             android:src="@drawable/biolock_logo"
             android:contentDescription="@string/app_logo"
+            app:tint="@android:color/white"
             android:layout_gravity="center"
             android:layout_marginBottom="32dp" />
 
