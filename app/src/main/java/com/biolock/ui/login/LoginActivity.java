@@ -166,16 +166,29 @@ public class LoginActivity extends AppCompatActivity {
                         .build();
                 faceDetector = FaceDetection.getClient(options);
 
-                // Check face enrollment status
-                Result<Boolean> hasFaceResult = faceEmbeddingRepository.hasFaceEmbedding(lastUserId);
-                if (hasFaceResult.isSuccess()) {
-                    hasFaceEnrollment = hasFaceResult.getData();
-                    if (!hasFaceEnrollment) {
+                // Check if lastUserId is not null before calling the repository
+                if (lastUserId != null) {
+                    Result<Boolean> hasFaceResult = faceEmbeddingRepository.hasFaceEmbedding(lastUserId);
+                    if (hasFaceResult.isSuccess()) {
+                        hasFaceEnrollment = hasFaceResult.getData();
+                        if (!hasFaceEnrollment) {
+                            runOnUiThread(() -> {
+                                updateStatus("Face not enrolled. Please enroll face first.");
+                                setNormalOverlay();
+                            });
+                        }
+                    } else {
+                        Log.e(TAG, "Failed to check face enrollment: " + hasFaceResult.getError());
                         runOnUiThread(() -> {
-                            updateStatus("Face not enrolled. Please enroll face first.");
-                            setNormalOverlay();
+                            updateStatus("Error checking face enrollment.");
                         });
                     }
+                } else {
+                    Log.e(TAG, "Last user ID is null. Cannot check face enrollment.");
+                    runOnUiThread(() -> {
+                        Toast.makeText(this, "Error: Last user ID is null.", Toast.LENGTH_LONG).show();
+                        progress.dismiss();
+                    });
                 }
 
                 // Complete initialization on UI thread
@@ -184,16 +197,15 @@ public class LoginActivity extends AppCompatActivity {
                     setupClickListeners();
                 });
             } catch (Exception e) {
+                Log.e("InitializationError", "Initialization failed", e); // Log the error
                 runOnUiThread(() -> {
                     progress.dismiss();
-                    Toast.makeText(this, "Initialization failed: " + e.getMessage(),
-                            Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Initialization failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
                     finish();
                 });
             }
         }).start();
     }
-
 
     private void initializeViews() {
         loginChoiceLayout = findViewById(R.id.loginChoiceLayout);
