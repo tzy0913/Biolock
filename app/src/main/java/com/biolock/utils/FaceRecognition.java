@@ -112,9 +112,12 @@ public class FaceRecognition {
             dotProduct += embedding1[i] * embedding2[i];
         }
 
-        // Adjust similarity curve to be more lenient in middle range
-        float rawSimilarity = (dotProduct + 1.0f) / 2.0f;  // Convert from [-1,1] to [0,1]
-        return (float) Math.pow(rawSimilarity, 0.7);  // Adjust curve to be more lenient
+        // Convert from [-1,1] to [0,1] range
+        float rawSimilarity = (dotProduct + 1.0f) / 2.0f;
+
+        // Adjust the curve to amplify similarity scores
+        // Using power of 0.4 to push scores higher
+        return (float) Math.pow(rawSimilarity, 0.4);
     }
 
     private void normalizeEmbedding(float[] embedding) {

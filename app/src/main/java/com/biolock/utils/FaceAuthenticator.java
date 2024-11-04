@@ -7,7 +7,7 @@ import com.biolock.repository.Result;
 
 public class FaceAuthenticator {
     private static final String TAG = "FaceAuthenticator";
-    private static final float SIMILARITY_THRESHOLD = 0.80f;
+    private static final float SIMILARITY_THRESHOLD = 0.85f;
 
     private final FaceEmbeddingRepository repository;
     private final LivenessDetector livenessDetector;

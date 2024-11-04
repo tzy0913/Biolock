@@ -32,6 +32,7 @@
         </activity>
         <activity android:name="com.biolock.ui.login.RegisterActivity" />
         <activity android:name="com.biolock.ui.dashboard.DashboardActivity" />
+        <activity android:name="com.biolock.ui.attendance.ViewAttendanceActivity" />
         <activity android:name="com.biolock.ui.settings.SettingsActivity" />
         <activity android:name="com.biolock.ui.settings.FaceEnrollmentActivity" />
     </application>

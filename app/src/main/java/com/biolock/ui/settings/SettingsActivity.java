@@ -15,9 +15,11 @@ import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import com.biolock.R;
 import com.biolock.repository.FaceEmbeddingRepository;
+import com.biolock.repository.FaceRecognitionLogRepository;
 import com.biolock.repository.Result;
 import com.biolock.repository.SecuritySettingsRepository;
 import com.biolock.model.SecuritySettings;
+import com.biolock.utils.SecurityAssessment;
 import com.biolock.utils.SessionManager;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -266,20 +268,30 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void performSecurityCheck() {
         new Thread(() -> {
-            Result<Boolean> hasFaceResult = faceEmbeddingRepository.hasFaceEmbedding(sessionManager.getUserId());
+            Result<SecurityAssessment.SecurityMetrics> result =
+                    SecurityAssessment.analyzeSecurityStatus(
+                            sessionManager.getUserId(),
+                            faceEmbeddingRepository,
+                            new FaceRecognitionLogRepository()
+                    );
 
             runOnUiThread(() -> {
-                SimpleDateFormat sdf = new SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault());
-                String currentTime = sdf.format(new Date());
-                textLastAssessment.setText("Last checked: " + currentTime);
-
-                if (hasFaceResult.isSuccess() && hasFaceResult.getData()) {
-                    textSecurityStatus.setText("Face recognition is properly configured");
+                updateLastCheckedTime();
+                if (result.isSuccess()) {
+                    String report = SecurityAssessment.formatSecurityReport(result.getData());
+                    textSecurityStatus.setText(report);
                 } else {
-                    textSecurityStatus.setText("Face enrollment required for biometric authentication");
+                    textSecurityStatus.setText("Unable to assess security status: " +
+                            result.getError().getMessage());
                 }
             });
         }).start();
+    }
+
+    private void updateLastCheckedTime() {
+        SimpleDateFormat sdf = new SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault());
+        String currentTime = sdf.format(new Date());
+        textLastAssessment.setText("Last checked: " + currentTime);
     }
 
     private int findSpinnerPosition(Spinner spinner, int value) {
