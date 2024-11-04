@@ -44,12 +44,13 @@ public class SecurityAssessment {
             metrics.hasFaceEnrollment = hasFaceResult.getData();
 
             if (!metrics.hasFaceEnrollment) {
-                metrics.securityStatus = "Face enrollment required for biometric authentication";
+                metrics.securityStatus = "NOT CONFIGURED";
                 return Result.success(metrics);
             }
 
-            // Get logs
-            Result<List<FaceRecognitionLog>> faceRecognitionLogResult = faceRecognitionLogRepository.getUserLogs(userId);
+            // Get logs only if face is enrolled
+            Result<List<FaceRecognitionLog>> faceRecognitionLogResult =
+                    faceRecognitionLogRepository.getUserLogs(userId);
             if (!faceRecognitionLogResult.isSuccess()) {
                 return Result.error(new Exception("Failed to retrieve logs"));
             }
@@ -185,9 +186,15 @@ public class SecurityAssessment {
     public static String formatSecurityReport(SecurityMetrics metrics) {
         StringBuilder report = new StringBuilder("Security Assessment:\n\n");
 
-        // Basic metrics
+        // Check enrollment status first
+        if (!metrics.hasFaceEnrollment) {
+            report.append("Face recognition is not configured. Please enroll your face in the settings.\n");
+            return report.toString();
+        }
+
+        // Then check login attempts
         if (metrics.totalLoginAttempts == 0) {
-            report.append("Face recognition configured but no login attempts recorded.\n");
+            report.append("No login attempts recorded yet.\n");
         } else {
             report.append(String.format(Locale.US, "Login Success Rate: %.1f%%\n", metrics.successRate));
             if (metrics.successRate > 0) {
@@ -196,8 +203,8 @@ public class SecurityAssessment {
             }
         }
 
-        // Pattern analysis
-        if (metrics.mostCommonLoginTime != null) {
+        // Pattern analysis - only show if there are login attempts
+        if (metrics.totalLoginAttempts > 0 && metrics.mostCommonLoginTime != null) {
             report.append("\nLogin Patterns (Last 30 days):\n");
             report.append("• Most frequent login time: ").append(metrics.mostCommonLoginTime).append("\n");
 
@@ -206,8 +213,10 @@ public class SecurityAssessment {
             }
         }
 
-        // Overall status
-        report.append("\nSecurity Status: ").append(metrics.securityStatus);
+        // Show overall status only if face is enrolled
+        if (metrics.hasFaceEnrollment) {
+            report.append("\nSecurity Status: ").append(metrics.securityStatus);
+        }
 
         return report.toString();
     }

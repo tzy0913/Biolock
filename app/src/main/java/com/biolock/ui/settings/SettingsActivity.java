@@ -177,37 +177,34 @@ public class SettingsActivity extends AppCompatActivity {
     private void updateBiometricUI(boolean hasFace) {
         switchBiometrics.setChecked(hasFace);
         buttonEnrollFace.setEnabled(!hasFace);
+        // Disable switch if face not enrolled
+        switchBiometrics.setEnabled(hasFace);
     }
 
     private void setupClickListeners() {
         buttonSaveSecuritySettings.setOnClickListener(v -> saveSecuritySettings());
         buttonSecurityCheck.setOnClickListener(v -> performSecurityCheck());
-        buttonEnrollFace.setOnClickListener(v ->
-                startActivity(new Intent(this, FaceEnrollmentActivity.class)));
+        buttonEnrollFace.setOnClickListener(v -> startActivity(new Intent(this, FaceEnrollmentActivity.class)));
 
-        // Handle face recognition switch
         switchBiometrics.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (!buttonView.isPressed()) {
-                // Skip if change wasn't from user interaction (e.g., during initialization)
                 return;
             }
 
             if (isChecked) {
-                // Enable face recognition flow
-                buttonEnrollFace.setEnabled(true);
-                // User needs to go through enrollment, so we don't need to do anything else here
-            } else {
-                // Show confirmation dialog before disabling
-                new AlertDialog.Builder(this)
-                        .setTitle("Disable Face Recognition")
-                        .setMessage("Are you sure you want to disable face recognition? This will delete your enrolled face data.")
-                        .setPositiveButton("Disable", (dialog, which) -> handleDisableFaceRecognition())
-                        .setNegativeButton("Cancel", (dialog, which) -> {
-                            // Revert switch state
-                            switchBiometrics.setChecked(true);
-                        })
-                        .show();
+                switchBiometrics.setChecked(false);
+                Toast.makeText(this, "Please enroll your face first", Toast.LENGTH_SHORT).show();
+                return;
             }
+
+            new AlertDialog.Builder(this)
+                    .setTitle("Disable Face Recognition")
+                    .setMessage("Are you sure you want to disable face recognition? This will delete your enrolled face data.")
+                    .setPositiveButton("Disable", (dialog, which) -> handleDisableFaceRecognition())
+                    .setNegativeButton("Cancel", (dialog, which) -> {
+                        switchBiometrics.setChecked(true);
+                    })
+                    .show();
         });
     }
 
