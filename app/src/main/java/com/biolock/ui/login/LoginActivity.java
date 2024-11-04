@@ -166,16 +166,20 @@ public class LoginActivity extends AppCompatActivity {
                         .build();
                 faceDetector = FaceDetection.getClient(options);
 
-                // Check face enrollment status
-                Result<Boolean> hasFaceResult = faceEmbeddingRepository.hasFaceEmbedding(lastUserId);
-                if (hasFaceResult.isSuccess()) {
-                    hasFaceEnrollment = hasFaceResult.getData();
-                    if (!hasFaceEnrollment) {
-                        runOnUiThread(() -> {
-                            updateStatus("Face not enrolled. Please enroll face first.");
-                            setNormalOverlay();
-                        });
+                // Check face enrollment status only if we have a valid lastUserId
+                if (lastUserId != null && lastUserId != -1) {
+                    Result<Boolean> hasFaceResult = faceEmbeddingRepository.hasFaceEmbedding(lastUserId);
+                    if (hasFaceResult.isSuccess()) {
+                        hasFaceEnrollment = hasFaceResult.getData();
+                        if (!hasFaceEnrollment) {
+                            runOnUiThread(() -> {
+                                updateStatus("Face not enrolled. Please enroll face first.");
+                                setNormalOverlay();
+                            });
+                        }
                     }
+                } else {
+                    hasFaceEnrollment = false;
                 }
 
                 // Complete initialization on UI thread
@@ -184,16 +188,17 @@ public class LoginActivity extends AppCompatActivity {
                     setupClickListeners();
                 });
             } catch (Exception e) {
+                Log.e(TAG, "Initialization failed", e);
                 runOnUiThread(() -> {
                     progress.dismiss();
-                    Toast.makeText(this, "Initialization failed: " + e.getMessage(),
+                    Toast.makeText(LoginActivity.this,
+                            "Initialization failed: " + e.getMessage(),
                             Toast.LENGTH_LONG).show();
                     finish();
                 });
             }
         }).start();
     }
-
 
     private void initializeViews() {
         loginChoiceLayout = findViewById(R.id.loginChoiceLayout);
