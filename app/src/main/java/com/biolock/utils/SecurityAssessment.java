@@ -1,12 +1,16 @@
 package com.biolock.utils;
 
-import android.util.Log;
 import com.biolock.model.FaceRecognitionLog;
-import com.biolock.repository.FaceEmbeddingRepository;
-import com.biolock.repository.FaceRecognitionLogRepository;
-import com.biolock.repository.Result;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 public class SecurityAssessment {
     private static final String TAG = "SecurityAssessment";
@@ -29,50 +33,28 @@ public class SecurityAssessment {
         }
     }
 
-    public static Result<SecurityMetrics> analyzeSecurityStatus(
-            long userId,
-            FaceEmbeddingRepository faceEmbeddingRepository,
-            FaceRecognitionLogRepository faceRecognitionLogRepository) {
-        try {
-            SecurityMetrics metrics = new SecurityMetrics();
+    public static SecurityMetrics analyzeSecurityMetrics(List<FaceRecognitionLog> logs, boolean hasFaceEnrollment) {
+        SecurityMetrics metrics = new SecurityMetrics();
+        metrics.hasFaceEnrollment = hasFaceEnrollment;
 
-            // Check face enrollment
-            Result<Boolean> hasFaceResult = faceEmbeddingRepository.hasFaceEmbedding(userId);
-            if (!hasFaceResult.isSuccess()) {
-                return Result.error(new Exception("Failed to check face enrollment"));
-            }
-            metrics.hasFaceEnrollment = hasFaceResult.getData();
-
-            if (!metrics.hasFaceEnrollment) {
-                metrics.securityStatus = "NOT CONFIGURED";
-                return Result.success(metrics);
-            }
-
-            // Get logs only if face is enrolled
-            Result<List<FaceRecognitionLog>> faceRecognitionLogResult =
-                    faceRecognitionLogRepository.getUserLogs(userId);
-            if (!faceRecognitionLogResult.isSuccess()) {
-                return Result.error(new Exception("Failed to retrieve logs"));
-            }
-
-            List<FaceRecognitionLog> faceRecognitionLog = faceRecognitionLogResult.getData();
-            calculateBasicMetrics(faceRecognitionLog, metrics);
-            analyzeLoginPatterns(faceRecognitionLog, metrics);
-            determineSecurityStatus(metrics);
-
-            return Result.success(metrics);
-        } catch (Exception e) {
-            Log.e(TAG, "Error analyzing security status", e);
-            return Result.error(e);
+        if (!hasFaceEnrollment) {
+            metrics.securityStatus = "NOT CONFIGURED";
+            return metrics;
         }
+
+        calculateBasicMetrics(logs, metrics);
+        analyzeLoginPatterns(logs, metrics);
+        determineSecurityStatus(metrics);
+
+        return metrics;
     }
 
-    private static void calculateBasicMetrics(List<FaceRecognitionLog> faceRecognitionLog, SecurityMetrics metrics) {
+    private static void calculateBasicMetrics(List<FaceRecognitionLog> logs, SecurityMetrics metrics) {
         int failedAttempts = 0;
         int highSimilarityCount = 0;
         float totalSimilarity = 0;
 
-        for (FaceRecognitionLog log : faceRecognitionLog) {
+        for (FaceRecognitionLog log : logs) {
             if (log.getActionType() == FaceRecognitionLog.ActionType.LOGIN) {
                 metrics.totalLoginAttempts++;
                 if (!log.isSuccess()) {
@@ -98,7 +80,7 @@ public class SecurityAssessment {
         }
     }
 
-    private static void analyzeLoginPatterns(List<FaceRecognitionLog> faceRecognitionLog, SecurityMetrics metrics) {
+    private static void analyzeLoginPatterns(List<FaceRecognitionLog> logs, SecurityMetrics metrics) {
         Set<String> uniqueDevices = new HashSet<>();
         Set<String> uniqueIPs = new HashSet<>();
         List<Integer> loginHours = new ArrayList<>();
@@ -107,7 +89,7 @@ public class SecurityAssessment {
         long currentTime = System.currentTimeMillis();
         long thirtyDaysMillis = 30L * 24 * 60 * 60 * 1000;
 
-        for (FaceRecognitionLog log : faceRecognitionLog) {
+        for (FaceRecognitionLog log : logs) {
             if (log.getActionType() == FaceRecognitionLog.ActionType.LOGIN &&
                     currentTime - log.getAttemptTimestamp().getTime() <= thirtyDaysMillis) {
 

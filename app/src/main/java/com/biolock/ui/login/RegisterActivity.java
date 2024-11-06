@@ -5,7 +5,9 @@ import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
+
 import androidx.appcompat.app.AppCompatActivity;
+
 import com.biolock.R;
 import com.biolock.model.User;
 import com.biolock.repository.Result;
@@ -30,7 +32,6 @@ public class RegisterActivity extends AppCompatActivity {
     private void initializeComponents() {
         initializeViews();
 
-        // Show progress while initializing
         ProgressDialog progress = new ProgressDialog(this);
         progress.setMessage("Initializing...");
         progress.setCancelable(false);
@@ -92,33 +93,20 @@ public class RegisterActivity extends AppCompatActivity {
         progress.show();
 
         new Thread(() -> {
-            try {
-                User newUser = new User();
-                newUser.setName(username);
-                newUser.setEmail(email);
-                newUser.setRole("student");
+            Result<User> result = userRepository.register(username, email, password);
 
-                Result<Long> result = userRepository.register(newUser, password);
-
-                runOnUiThread(() -> {
-                    progress.dismiss();
-                    if (result.isSuccess()) {
-                        Toast.makeText(RegisterActivity.this,
-                                "Registration successful", Toast.LENGTH_SHORT).show();
-                        finish();
-                    } else {
-                        Toast.makeText(RegisterActivity.this,
-                                "Registration failed: " + result.getError().getMessage(),
-                                Toast.LENGTH_SHORT).show();
-                    }
-                });
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    progress.dismiss();
+            runOnUiThread(() -> {
+                progress.dismiss();
+                if (result.isSuccess()) {
                     Toast.makeText(RegisterActivity.this,
-                            "Registration failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                });
-            }
+                            "Registration successful", Toast.LENGTH_SHORT).show();
+                    finish();
+                } else {
+                    Toast.makeText(RegisterActivity.this,
+                            "Registration failed: " + result.getError(),
+                            Toast.LENGTH_SHORT).show();
+                }
+            });
         }).start();
     }
 }

@@ -1,99 +1,118 @@
 package com.biolock.database.dao;
 
+import android.util.Log;
+
 import com.biolock.database.DatabaseHelper;
 import com.biolock.model.FaceRecognitionLog;
+
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
 public class FaceRecognitionLogDao {
-    private final DatabaseHelper dbHelper;
+    private static final String TAG = "FaceRecognitionLogDao";
 
-    public FaceRecognitionLogDao() {
-        this.dbHelper = DatabaseHelper.getInstance();
-    }
-
-    public long insert(FaceRecognitionLog log) throws SQLException {
+    public void logAttempt(FaceRecognitionLog log) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "INSERT INTO face_recognition_logs (user_id, success, similarity, device_info, " +
-                    "ip_address, action_type) VALUES (?, ?, ?, ?, ?, ?)";
+            String sql = "INSERT INTO face_recognition_logs (user_id, attempt_timestamp, success, " +
+                    "similarity, device_info, ip_address, action_type) " +
+                    "VALUES (?, NOW(), ?, ?, ?, ?, ?)";
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-                pstmt.setLong(1, log.getUserId());
-                pstmt.setBoolean(2, log.isSuccess());
-                pstmt.setFloat(3, log.getSimilarity());
-                pstmt.setString(4, log.getDeviceInfo());
-                pstmt.setString(5, log.getIpAddress());
-                pstmt.setString(6, log.getActionType().name());
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, log.getUserId());
+            stmt.setBoolean(2, log.isSuccess());
+            stmt.setFloat(3, log.getSimilarity());
+            stmt.setString(4, log.getDeviceInfo());
+            stmt.setString(5, log.getIpAddress());
+            stmt.setString(6, log.getActionType().name());
 
-                int affectedRows = pstmt.executeUpdate();
-                if (affectedRows == 0) {
-                    throw new SQLException("Creating face recognition log failed, no rows affected.");
-                }
-
-                try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
-                    if (generatedKeys.next()) {
-                        return generatedKeys.getLong(1);
-                    } else {
-                        throw new SQLException("Creating face recognition log failed, no ID obtained.");
-                    }
-                }
-            }
+            stmt.executeUpdate();
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, null);
         }
     }
 
-    public List<FaceRecognitionLog> findByUserId(long userId) throws SQLException {
+    public List<FaceRecognitionLog> getRecentLogs(Long userId, int limit) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "SELECT * FROM face_recognition_logs WHERE user_id = ? ORDER BY attempt_timestamp DESC";
+            String sql = "SELECT * FROM face_recognition_logs WHERE user_id = ? " +
+                    "ORDER BY attempt_timestamp DESC LIMIT ?";
+
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, userId);
+            stmt.setInt(2, limit);
+            rs = stmt.executeQuery();
+
             List<FaceRecognitionLog> logs = new ArrayList<>();
-
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setLong(1, userId);
-
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    while (rs.next()) {
-                        logs.add(mapResultSetToFaceRecognitionLog(rs));
-                    }
-                }
+            while (rs.next()) {
+                logs.add(mapResultSetToLog(rs));
             }
             return logs;
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, rs);
         }
     }
 
-    public int countRecentFailedAttempts(long userId, String ipAddress, int minutes) throws SQLException {
+    public List<FaceRecognitionLog> getLogsByDateRange(Long userId, Date start, Date end) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "SELECT COUNT(*) FROM face_recognition_logs " +
-                    "WHERE user_id = ? AND ip_address = ? AND success = 0 AND action_type = 'LOGIN' " +
-                    "AND attempt_timestamp >= DATE_SUB(NOW(), INTERVAL ? MINUTE)";
+            String sql = "SELECT * FROM face_recognition_logs WHERE user_id = ? " +
+                    "AND attempt_timestamp BETWEEN ? AND ? ORDER BY attempt_timestamp DESC";
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setLong(1, userId);
-                pstmt.setString(2, ipAddress);
-                pstmt.setInt(3, minutes);
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, userId);
+            stmt.setTimestamp(2, new Timestamp(start.getTime()));
+            stmt.setTimestamp(3, new Timestamp(end.getTime()));
+            rs = stmt.executeQuery();
 
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        return rs.getInt(1);
-                    }
-                    return 0;
-                }
+            List<FaceRecognitionLog> logs = new ArrayList<>();
+            while (rs.next()) {
+                logs.add(mapResultSetToLog(rs));
             }
+            return logs;
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, rs);
         }
     }
 
-    private FaceRecognitionLog mapResultSetToFaceRecognitionLog(ResultSet rs) throws SQLException {
+    public int getFailedAttempts(Long userId, Date since) throws SQLException {
+        Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
+        try {
+            String sql = "SELECT COUNT(*) FROM face_recognition_logs " +
+                    "WHERE user_id = ? AND success = false " +
+                    "AND attempt_timestamp > ? AND action_type = 'LOGIN'";
+
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, userId);
+            stmt.setTimestamp(2, new Timestamp(since.getTime()));
+            rs = stmt.executeQuery();
+
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+            return 0;
+        } finally {
+            closeResources(conn, stmt, rs);
+        }
+    }
+
+    private FaceRecognitionLog mapResultSetToLog(ResultSet rs) throws SQLException {
         FaceRecognitionLog log = new FaceRecognitionLog();
         log.setLogId(rs.getLong("log_id"));
         log.setUserId(rs.getLong("user_id"));
@@ -104,5 +123,25 @@ public class FaceRecognitionLogDao {
         log.setIpAddress(rs.getString("ip_address"));
         log.setActionType(FaceRecognitionLog.ActionType.valueOf(rs.getString("action_type")));
         return log;
+    }
+
+    private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
+        if (rs != null) {
+            try {
+                rs.close();
+            } catch (SQLException e) {
+                Log.e(TAG, "Error closing ResultSet", e);
+            }
+        }
+        if (stmt != null) {
+            try {
+                stmt.close();
+            } catch (SQLException e) {
+                Log.e(TAG, "Error closing Statement", e);
+            }
+        }
+        if (conn != null) {
+            DatabaseHelper.getInstance().releaseConnection(conn);
+        }
     }
 }

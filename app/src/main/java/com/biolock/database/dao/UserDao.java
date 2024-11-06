@@ -1,200 +1,162 @@
 package com.biolock.database.dao;
 
+import android.util.Log;
+
 import com.biolock.database.DatabaseHelper;
 import com.biolock.model.User;
+
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
 public class UserDao {
-    private final DatabaseHelper dbHelper;
+    private static final String TAG = "UserDAO";
 
-    public UserDao() {
-        this.dbHelper = DatabaseHelper.getInstance();
-    }
-
-    public long insert(User user, String password) throws SQLException {
+    public User findById(Long userId) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "INSERT INTO users (name, email, role, password) VALUES (?, ?, ?, PASSWORD(?))";
-
-            try (PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-
-                pstmt.setString(1, user.getName());
-                pstmt.setString(2, user.getEmail());
-                pstmt.setString(3, user.getRole());
-                pstmt.setString(4, password);
-
-                int affectedRows = pstmt.executeUpdate();
-                if (affectedRows == 0) {
-                    throw new SQLException("Creating user failed, no rows affected.");
-                }
-
-                try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
-                    if (generatedKeys.next()) {
-                        return generatedKeys.getLong(1);
-                    } else {
-                        throw new SQLException("Creating user failed, no ID obtained.");
-                    }
-                }
-            }
-        } finally {
-            dbHelper.releaseConnection(conn);
-        }
-    }
-
-    public User validateCredentials(String email, String password) throws SQLException {
-        Connection conn = null;
-        try {
-            conn = dbHelper.getConnection();
-            String sql = "SELECT * FROM users WHERE email = ? AND password = PASSWORD(?)";
-
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-
-                pstmt.setString(1, email);
-                pstmt.setString(2, password);
-
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        return mapResultSetToUser(rs);
-                    }
-                    return null;
-                }
-            }
-        } finally {
-            dbHelper.releaseConnection(conn);
-        }
-    }
-
-    public User findById(long userId) throws SQLException {
-        Connection conn = null;
-        try {
-            conn = dbHelper.getConnection();
             String sql = "SELECT * FROM users WHERE user_id = ?";
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, userId);
+            rs = stmt.executeQuery();
 
-                pstmt.setLong(1, userId);
-
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        return mapResultSetToUser(rs);
-                    }
-                    return null;
-                }
+            if (rs.next()) {
+                return mapResultSetToUser(rs);
             }
+            return null;
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, rs);
         }
     }
 
     public User findByEmail(String email) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "SELECT * FROM users WHERE email = ?";
+            String sql = "SELECT user_id, name, email, role, password, created_at " +
+                    "FROM users WHERE email = ?";
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setString(1, email);
+            rs = stmt.executeQuery();
 
-                pstmt.setString(1, email);
-
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        return mapResultSetToUser(rs);
-                    }
-                    return null;
-                }
+            if (rs.next()) {
+                return mapResultSetToUser(rs);
             }
+            return null;
         } finally {
-            dbHelper.releaseConnection(conn);
-        }
-
-    }
-
-    public List<User> findAll() throws SQLException {
-        Connection conn = null;
-        try {
-            conn = dbHelper.getConnection();
-            String sql = "SELECT * FROM users ORDER BY name";
-            List<User> users = new ArrayList<>();
-
-            try (Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(sql)) {
-
-                while (rs.next()) {
-                    users.add(mapResultSetToUser(rs));
-                }
-            }
-            return users;
-        } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, rs);
         }
     }
 
-    public List<User> findByRole(String role) throws SQLException {
+    public Long save(User user) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "SELECT * FROM users WHERE role = ?";
-            List<User> users = new ArrayList<>();
+            // Use MySQL's PASSWORD() function for encryption
+            String sql = "INSERT INTO users (name, email, role, password, created_at) " +
+                    "VALUES (?, ?, ?, PASSWORD(?), NOW())";
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            stmt.setString(1, user.getName());
+            stmt.setString(2, user.getEmail());
+            stmt.setString(3, user.getRole());
+            stmt.setString(4, user.getPassword());
 
-                pstmt.setString(1, role);
-
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    while (rs.next()) {
-                        users.add(mapResultSetToUser(rs));
-                    }
-                }
+            int affectedRows = stmt.executeUpdate();
+            if (affectedRows == 0) {
+                throw new SQLException("Creating user failed, no rows affected.");
             }
-            return users;
+
+            rs = stmt.getGeneratedKeys();
+            if (rs.next()) {
+                return rs.getLong(1);
+            } else {
+                throw new SQLException("Creating user failed, no ID obtained.");
+            }
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, rs);
+        }
+    }
+
+    public boolean verifyPassword(String email, String password) throws SQLException {
+        Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
+        try {
+            // Compare with encrypted password
+            String sql = "SELECT COUNT(*) FROM users " +
+                    "WHERE email = ? AND password = PASSWORD(?)";
+
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setString(1, email);
+            stmt.setString(2, password);
+            rs = stmt.executeQuery();
+
+            if (rs.next()) {
+                return rs.getInt(1) > 0;
+            }
+            return false;
+        } finally {
+            closeResources(conn, stmt, rs);
         }
     }
 
     public void update(User user) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "UPDATE users SET name = ?, email = ?, role = ? WHERE user_id = ?";
+            String sql = "UPDATE users SET name = ?, email = ?, role = ? " +
+                    "WHERE user_id = ?";
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setString(1, user.getName());
+            stmt.setString(2, user.getEmail());
+            stmt.setString(3, user.getRole());
+            stmt.setLong(4, user.getUserId());
 
-                pstmt.setString(1, user.getName());
-                pstmt.setString(2, user.getEmail());
-                pstmt.setString(3, user.getRole());
-                pstmt.setLong(4, user.getUserId());
-
-                int affectedRows = pstmt.executeUpdate();
-                if (affectedRows == 0) {
-                    throw new SQLException("Updating user failed, no user found.");
-                }
+            int affectedRows = stmt.executeUpdate();
+            if (affectedRows == 0) {
+                throw new SQLException("Updating user failed, no rows affected.");
             }
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, null);
         }
     }
 
-    public void delete(long userId) throws SQLException {
+    public boolean credentialsExist(String email) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "DELETE FROM users WHERE user_id = ?";
+            String sql = "SELECT COUNT(*) FROM users WHERE email = ?";
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setString(1, email);
+            rs = stmt.executeQuery();
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-
-                pstmt.setLong(1, userId);
-
-                int affectedRows = pstmt.executeUpdate();
-                if (affectedRows == 0) {
-                    throw new SQLException("Deleting user failed, no user found.");
-                }
+            if (rs.next()) {
+                return rs.getInt(1) > 0;
             }
+            return false;
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, rs);
         }
     }
 
@@ -204,7 +166,28 @@ public class UserDao {
         user.setName(rs.getString("name"));
         user.setEmail(rs.getString("email"));
         user.setRole(rs.getString("role"));
+        user.setPassword(rs.getString("password"));
         user.setCreatedAt(rs.getTimestamp("created_at"));
         return user;
+    }
+
+    private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
+        if (rs != null) {
+            try {
+                rs.close();
+            } catch (SQLException e) {
+                Log.e(TAG, "Error closing ResultSet", e);
+            }
+        }
+        if (stmt != null) {
+            try {
+                stmt.close();
+            } catch (SQLException e) {
+                Log.e(TAG, "Error closing Statement", e);
+            }
+        }
+        if (conn != null) {
+            DatabaseHelper.getInstance().releaseConnection(conn);
+        }
     }
 }

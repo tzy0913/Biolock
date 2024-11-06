@@ -1,44 +1,88 @@
 package com.biolock.model;
 
-import java.sql.Timestamp;
+import java.util.Date;
 
 public class FaceRecognitionLog {
-    public enum ActionType {
-        ENROLLMENT,
-        LOGIN
-    }
-
-    private long logId;
-    private long userId;
-    private Timestamp attemptTimestamp;
+    private Long logId;
+    private Long userId;
+    private Date attemptTimestamp;
     private boolean success;
     private float similarity;
     private String deviceInfo;
     private String ipAddress;
     private ActionType actionType;
 
-    // Getters and setters
-    public long getLogId() { return logId; }
-    public void setLogId(long logId) { this.logId = logId; }
+    public enum ActionType {
+        ENROLLMENT,
+        LOGIN
+    }
 
-    public long getUserId() { return userId; }
-    public void setUserId(long userId) { this.userId = userId; }
+    public FaceRecognitionLog() {
+        this.attemptTimestamp = new Date();
+    }
 
-    public Timestamp getAttemptTimestamp() { return attemptTimestamp; }
-    public void setAttemptTimestamp(Timestamp attemptTimestamp) { this.attemptTimestamp = attemptTimestamp; }
+    // Getters and Setters
+    public Long getLogId() {
+        return logId;
+    }
 
-    public boolean isSuccess() { return success; }
-    public void setSuccess(boolean success) { this.success = success; }
+    public void setLogId(Long logId) {
+        this.logId = logId;
+    }
 
-    public float getSimilarity() { return similarity; }
-    public void setSimilarity(float similarity) { this.similarity = similarity; }
+    public Long getUserId() {
+        return userId;
+    }
 
-    public String getDeviceInfo() { return deviceInfo; }
-    public void setDeviceInfo(String deviceInfo) { this.deviceInfo = deviceInfo; }
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
 
-    public String getIpAddress() { return ipAddress; }
-    public void setIpAddress(String ipAddress) { this.ipAddress = ipAddress; }
+    public Date getAttemptTimestamp() {
+        return attemptTimestamp;
+    }
 
-    public ActionType getActionType() { return actionType; }
-    public void setActionType(ActionType actionType) { this.actionType = actionType; }
+    public void setAttemptTimestamp(Date attemptTimestamp) {
+        this.attemptTimestamp = attemptTimestamp;
+    }
+
+    public boolean isSuccess() {
+        return success;
+    }
+
+    public void setSuccess(boolean success) {
+        this.success = success;
+    }
+
+    public float getSimilarity() {
+        return similarity;
+    }
+
+    public void setSimilarity(float similarity) {
+        this.similarity = similarity;
+    }
+
+    public String getDeviceInfo() {
+        return deviceInfo;
+    }
+
+    public void setDeviceInfo(String deviceInfo) {
+        this.deviceInfo = deviceInfo;
+    }
+
+    public String getIpAddress() {
+        return ipAddress;
+    }
+
+    public void setIpAddress(String ipAddress) {
+        this.ipAddress = ipAddress;
+    }
+
+    public ActionType getActionType() {
+        return actionType;
+    }
+
+    public void setActionType(ActionType actionType) {
+        this.actionType = actionType;
+    }
 }

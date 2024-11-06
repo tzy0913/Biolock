@@ -1,27 +1,39 @@
 package com.biolock.model;
 
-import java.sql.Timestamp;
-
 public class ClassAssignment {
-    private long assignmentId;
-    private long classId;
-    private long userId;
-    private String role;
-    private Timestamp createdAt;
+    private Long assignmentId;
+    private Long classId;
+    private Long userId;
 
-    // Getters and setters
-    public long getAssignmentId() { return assignmentId; }
-    public void setAssignmentId(long assignmentId) { this.assignmentId = assignmentId; }
+    public ClassAssignment() {}
 
-    public long getClassId() { return classId; }
-    public void setClassId(long classId) { this.classId = classId; }
+    public ClassAssignment(Long classId, Long userId) {
+        this.classId = classId;
+        this.userId = userId;
+    }
 
-    public long getUserId() { return userId; }
-    public void setUserId(long userId) { this.userId = userId; }
+    // Getters and Setters
+    public Long getAssignmentId() {
+        return assignmentId;
+    }
 
-    public String getRole() { return role; }
-    public void setRole(String role) { this.role = role; }
+    public void setAssignmentId(Long assignmentId) {
+        this.assignmentId = assignmentId;
+    }
 
-    public Timestamp getCreatedAt() { return createdAt; }
-    public void setCreatedAt(Timestamp createdAt) { this.createdAt = createdAt; }
+    public Long getClassId() {
+        return classId;
+    }
+
+    public void setClassId(Long classId) {
+        this.classId = classId;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
 }

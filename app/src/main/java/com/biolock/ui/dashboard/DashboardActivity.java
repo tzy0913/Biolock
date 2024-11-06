@@ -1,7 +1,5 @@
 package com.biolock.ui.dashboard;
 
-import static androidx.constraintlayout.helper.widget.MotionEffect.TAG;
-
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -10,300 +8,302 @@ import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.style.ForegroundColorSpan;
 import android.util.Log;
+import android.view.View;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
-
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
-
 import com.biolock.R;
-import com.biolock.database.DatabaseHelper;
 import com.biolock.model.Attendance;
+import com.biolock.model.CourseClass;
+import com.biolock.repository.AttendanceRepository;
+import com.biolock.repository.Result;
+import com.biolock.ui.attendance.ViewAttendanceActivity;
+import com.biolock.ui.login.LoginActivity;
 import com.biolock.ui.settings.SettingsActivity;
 import com.biolock.utils.SessionManager;
-import com.biolock.ui.login.LoginActivity;
-import com.biolock.ui.attendance.ViewAttendanceActivity;
-import com.biolock.repository.SessionRepository;
-import com.biolock.repository.ClassRepository;
-import com.biolock.repository.AttendanceRepository;
-import com.biolock.model.Session;
-import com.biolock.model.Class;
-import com.biolock.repository.Result;
-
-import java.time.LocalTime;
-import java.time.LocalDate;
+import com.biolock.model.User;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
 import java.util.List;
-import java.util.Optional;
+import java.util.Locale;
 
 public class DashboardActivity extends AppCompatActivity {
     private static final String TAG = "DashboardActivity";
-    private SessionManager sessionManager;
-    private TextView textClassInfo;
     private TextView textGreeting;
+    private TextView textClassInfo;
     private Button buttonMarkAttendance;
-    private DatabaseHelper dbHelper;
-    private SessionRepository sessionRepository;
-    private ClassRepository classRepository;
+    private Button buttonViewAttendance;
+    private LinearLayout sessionButtons;
+    private Button buttonViewClassAttendance;
+    private Button buttonAttendanceStatistics;
     private AttendanceRepository attendanceRepository;
-    private Session currentSession;
+    private SessionManager sessionManager;
+    private SimpleDateFormat timeFormat;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_dashboard);
 
-        sessionManager = new SessionManager(this);
-
-        if (!sessionManager.isLoggedIn()) {
-            startActivity(new Intent(this, LoginActivity.class));
-            finish();
-            return;
-        }
-
-        sessionRepository = new SessionRepository();
-        classRepository = new ClassRepository();
-        attendanceRepository = new AttendanceRepository();
-
-        initializeDatabase();
         initializeViews();
-        setupClickListeners();
-        updateDashboard();
-    }
-
-    private void initializeDatabase() {
-        new Thread(() -> {
-            try {
-                dbHelper = DatabaseHelper.getInstance();
-                dbHelper.initialize();
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    Toast.makeText(this, "Database initialization failed", Toast.LENGTH_LONG).show();
-                    finish();
-                });
-            }
-        }).start();
+        setupDashboard();
     }
 
     private void initializeViews() {
-        textClassInfo = findViewById(R.id.textClassInfo);
         textGreeting = findViewById(R.id.textGreeting);
+        textClassInfo = findViewById(R.id.textClassInfo);
         buttonMarkAttendance = findViewById(R.id.buttonMarkAttendance);
-    }
+        buttonViewAttendance = findViewById(R.id.buttonViewAttendance);
+        sessionButtons = findViewById(R.id.sessionButtons);
+        buttonViewClassAttendance = findViewById(R.id.buttonViewClassAttendance);
+        buttonAttendanceStatistics = findViewById(R.id.buttonAttendanceStatistics);
 
-    private void setupClickListeners() {
-        findViewById(R.id.buttonSettings).setOnClickListener(v -> {
-            startActivity(new Intent(this, SettingsActivity.class));
-        });
+        timeFormat = new SimpleDateFormat("h:mm a", Locale.getDefault());
+        sessionManager = new SessionManager(this);
+        attendanceRepository = new AttendanceRepository();
+
+        // Set greeting
+        textGreeting.setText(String.format("Hi, %s!", sessionManager.getUserName()));
+
+        // Common buttons
+        findViewById(R.id.buttonSettings).setOnClickListener(v ->
+                startActivity(new Intent(this, SettingsActivity.class)));
 
         findViewById(R.id.buttonLogout).setOnClickListener(v -> {
-            sessionManager.clearLoginState();
-            if (dbHelper != null) {
-                dbHelper.cleanup();
-            }
-            startActivity(new Intent(this, LoginActivity.class)
-                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK));
+            sessionManager.logoutUser();
+            startActivity(new Intent(this, LoginActivity.class));
             finish();
         });
-
-        buttonMarkAttendance.setOnClickListener(v -> {
-            if (currentSession != null) {
-                markAttendance(currentSession.getSessionId());
-            }
-        });
-
-        findViewById(R.id.buttonViewAttendance).setOnClickListener(v -> {
-            startActivity(new Intent(this, ViewAttendanceActivity.class));
-        });
     }
 
-    private void markAttendance(int sessionId) {
-        new Thread(() -> {
-            Result<Long> result = attendanceRepository.markAttendance(
-                    sessionManager.getUserId(),
-                    sessionId
-            );
+    private void setupDashboard() {
+        boolean isInstructor = User.ROLE_INSTRUCTOR.equals(sessionManager.getUserRole());
+        setupViewVisibility(isInstructor);
+        setupClickListeners(isInstructor);
+        loadDashboardData(isInstructor);
+    }
 
-            runOnUiThread(() -> {
-                if (result.isSuccess()) {
-                    Toast.makeText(this, "Attendance marked successfully", Toast.LENGTH_SHORT).show();
-                    checkCurrentClass(); // Refresh the display
-                } else {
-                    Toast.makeText(this, "Failed to mark attendance: " +
-                            result.getError().getMessage(), Toast.LENGTH_SHORT).show();
+    private void setupViewVisibility(boolean isInstructor) {
+        // Student views
+        buttonMarkAttendance.setVisibility(isInstructor ? View.GONE : View.VISIBLE);
+        buttonViewAttendance.setVisibility(isInstructor ? View.GONE : View.VISIBLE);
+
+        // Instructor views
+        sessionButtons.setVisibility(isInstructor ? View.VISIBLE : View.GONE);
+        buttonViewClassAttendance.setVisibility(isInstructor ? View.VISIBLE : View.GONE);
+        buttonAttendanceStatistics.setVisibility(isInstructor ? View.VISIBLE : View.GONE);
+    }
+
+    private void setupClickListeners(boolean isInstructor) {
+        if (isInstructor) {
+            buttonViewClassAttendance.setOnClickListener(v -> {
+                Intent intent = new Intent(this, ViewAttendanceActivity.class);
+                CourseClass currentClass = CourseClass.getCurrentClass();
+                if (currentClass != null) {
+                    intent.putExtra(ViewAttendanceActivity.EXTRA_CLASS_ID, currentClass.getClassId());
                 }
+                startActivity(intent);
             });
-        }).start();
+        } else {
+            buttonMarkAttendance.setOnClickListener(v -> markAttendance());
+            buttonViewAttendance.setOnClickListener(v ->
+                    startActivity(new Intent(this, ViewAttendanceActivity.class)));
+        }
     }
 
-    private void updateDashboard() {
-        String userName = sessionManager.getUserName();
-        textGreeting.setText(String.format("Hi, %s!", userName));
-        checkCurrentClass();
-    }
-
-    private void checkCurrentClass() {
+    private void loadDashboardData(boolean isInstructor) {
         new Thread(() -> {
             try {
-                LocalDate today = LocalDate.now();
-                LocalTime currentTime = LocalTime.now();
+                Result<List<?>> result = attendanceRepository.getTodayAttendance(
+                        sessionManager.getUserId(),
+                        isInstructor
+                );
 
-                Log.d(TAG, "Checking class at: " + currentTime + " on " + today);
-
-                Result<List<Session>> sessionsResult = sessionRepository.getSessionsByDate(today);
-                if (!sessionsResult.isSuccess()) {
-                    Log.e(TAG, "Failed to fetch sessions: " + sessionsResult.getError().getMessage());
-                    showError("Could not fetch sessions");
+                if (!result.isSuccess()) {
+                    showError("Failed to load class information");
                     return;
                 }
 
-                List<Session> sessions = sessionsResult.getData();
-                Log.d(TAG, "Found " + sessions.size() + " sessions for today");
-
-                currentSession = sessions.stream()
-                        .peek(s -> Log.d(TAG, String.format("Checking session: start=%s, end=%s",
-                                s.getStartTime(), s.getEndTime())))
-                        .filter(session -> {
-                            LocalTime markingStartTime = session.getStartTime().minusMinutes(30);
-                            boolean canMark = (currentTime.isAfter(markingStartTime) ||
-                                    currentTime.equals(markingStartTime)) &&
-                                    currentTime.isBefore(session.getEndTime());
-                            Log.d(TAG, String.format("Session %d: markingStart=%s, canMark=%b",
-                                    session.getSessionId(), markingStartTime, canMark));
-                            return canMark;
-                        })
-                        .findFirst()
-                        .orElse(null);
-
-                if (currentSession != null) {
-                    Log.d(TAG, "Found current session: " + currentSession.getSessionId());
-                    Result<Class> classResult = classRepository.getClassById(currentSession.getClassId());
-                    if (classResult.isSuccess()) {
-                        Class classData = classResult.getData();
-
-                        Result<List<Attendance>> attendanceResult = attendanceRepository.getTodayAttendance(
-                                sessionManager.getUserId()
-                        );
-
-                        boolean alreadyMarked = false;
-                        String attendanceStatus = "Not Marked";
-                        if (attendanceResult.isSuccess()) {
-                            Optional<Attendance> existingAttendance = attendanceResult.getData().stream()
-                                    .filter(a -> a.getSessionId() == currentSession.getSessionId())
-                                    .findFirst();
-
-                            if (existingAttendance.isPresent()) {
-                                String status = existingAttendance.get().getStatus();
-                                // Only consider it marked if status is present/late/absent
-                                alreadyMarked = "present".equalsIgnoreCase(status) ||
-                                        "late".equalsIgnoreCase(status) ||
-                                        "absent".equalsIgnoreCase(status);
-                                attendanceStatus = status;
-                                Log.d(TAG, "Found existing attendance: " + status + ", alreadyMarked: " + alreadyMarked);
-                            }
-                        }
-
-                        LocalTime lateAfterTime = currentSession.getStartTime().plusHours(1);
-                        String markingStatus = currentTime.isAfter(lateAfterTime) ?
-                                "Attendance will be marked as late" : "";
-
-                        final boolean finalMarked = alreadyMarked;
-                        final String finalStatus = attendanceStatus;
-                        final String finalMarkingStatus = markingStatus;
-
-                        runOnUiThread(() -> {
-                            SpannableStringBuilder builder = new SpannableStringBuilder();
-                            builder.append(String.format("%s - %s\n%s to %s\nRoom: %s\n",
-                                    classData.getModuleCode(),
-                                    classData.getModuleName(),
-                                    currentSession.getStartTime().toString(),
-                                    currentSession.getEndTime().toString(),
-                                    classData.getRoom()));
-
-                            // Add marking status with dark red color if it's late
-                            if (!finalMarkingStatus.isEmpty()) {
-                                SpannableString statusText = new SpannableString(finalMarkingStatus + "\n");
-                                statusText.setSpan(
-                                        new ForegroundColorSpan(
-                                                ContextCompat.getColor(this, android.R.color.holo_red_dark)
-                                        ),
-                                        0,
-                                        finalMarkingStatus.length(),
-                                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                                );
-                                builder.append(statusText);
-                            }
-
-                            // Add attendance status
-                            builder.append("Attendance marked: ");
-                            String status = finalStatus;
-                            if (status.equalsIgnoreCase("late") || status.equalsIgnoreCase("absent")) {
-                                SpannableString statusText = new SpannableString(status);
-                                statusText.setSpan(
-                                        new ForegroundColorSpan(
-                                                ContextCompat.getColor(this, android.R.color.holo_red_dark)
-                                        ),
-                                        0,
-                                        status.length(),
-                                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                                );
-                                builder.append(statusText);
-                            } else if (status.equalsIgnoreCase("present")) {
-                                SpannableString statusText = new SpannableString(status);
-                                statusText.setSpan(
-                                        new ForegroundColorSpan(
-                                                ContextCompat.getColor(this, android.R.color.holo_green_dark)
-                                        ),
-                                        0,
-                                        status.length(),
-                                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                                );
-                                builder.append(statusText);
-                            } else {
-                                builder.append(status); // Not marked stays default color
-                            }
-
-                            textClassInfo.setText(builder);
-                            buttonMarkAttendance.setEnabled(!finalMarked);
-                            Log.d(TAG, "Updated UI - button enabled: " + !finalMarked);
-                        });
-                    } else {
-                        Log.e(TAG, "Failed to get class data: " + classResult.getError().getMessage());
-                        showError("Failed to get class information");
-                    }
+                if (isInstructor) {
+                    handleInstructorData((List<CourseClass>) result.getData());
                 } else {
-                    Log.d(TAG, "No current session found");
-                    runOnUiThread(() -> {
-                        textClassInfo.setText("No class available for attendance marking");
-                        buttonMarkAttendance.setEnabled(false);
-                    });
+                    handleStudentData((List<Attendance>) result.getData());
                 }
             } catch (Exception e) {
-                Log.e(TAG, "Error in checkCurrentClass", e);
-                showError("Error checking class schedule: " + e.getMessage());
+                Log.e(TAG, "Error loading dashboard data", e);
+                showError("Error loading data");
             }
         }).start();
+    }
+
+    private void handleInstructorData(List<CourseClass> classes) {
+        runOnUiThread(() -> {
+            CourseClass currentClass = findCurrentOrUpcomingClass(classes);
+            if (currentClass == null) {
+                showNoClasses();
+                return;
+            }
+
+            CourseClass.setCurrentClass(currentClass);
+            SpannableStringBuilder builder = new SpannableStringBuilder();
+            appendClassInfo(builder, currentClass);
+            textClassInfo.setText(builder);
+            buttonViewClassAttendance.setEnabled(true);
+        });
+    }
+
+    private void handleStudentData(List<Attendance> attendances) {
+        runOnUiThread(() -> {
+            Attendance currentAttendance = findCurrentOrUpcomingClass(attendances);
+            if (currentAttendance == null) {
+                showNoClasses();
+                return;
+            }
+
+            SpannableStringBuilder builder = new SpannableStringBuilder();
+            appendClassInfo(builder, currentAttendance);
+            appendAttendanceStatus(builder, currentAttendance.getStatus());
+            textClassInfo.setText(builder);
+            buttonMarkAttendance.setEnabled(canMarkAttendance(currentAttendance));
+        });
+    }
+
+    private <T> T findCurrentOrUpcomingClass(List<T> classes) {
+        if (classes == null || classes.isEmpty()) return null;
+
+        Calendar now = Calendar.getInstance();
+
+        for (T classObj : classes) {
+            // Create calendar for class end time with proper date
+            Calendar endTime = Calendar.getInstance();
+
+            if (classObj instanceof Attendance) {
+                Attendance attendance = (Attendance) classObj;
+                endTime.setTime(attendance.getSessionDate());
+                endTime.set(Calendar.HOUR_OF_DAY, attendance.getEndTime().getHours());
+                endTime.set(Calendar.MINUTE, attendance.getEndTime().getMinutes());
+            } else if (classObj instanceof CourseClass) {
+                CourseClass courseClass = (CourseClass) classObj;
+                endTime.setTime(courseClass.getSessionDate());
+                endTime.set(Calendar.HOUR_OF_DAY, courseClass.getEndTime().getHours());
+                endTime.set(Calendar.MINUTE, courseClass.getEndTime().getMinutes());
+            } else {
+                continue; // Skip unknown types
+            }
+
+            endTime.add(Calendar.MINUTE, 30);  // 30 min buffer after class ends
+
+            // If class is current or upcoming (hasn't ended yet including buffer)
+            if (endTime.after(now)) {
+                return classObj;
+            }
+        }
+        return null;
+    }
+
+    private boolean canMarkAttendance(Attendance attendance) {
+        if (attendance == null) return false;
+        if ("present".equalsIgnoreCase(attendance.getStatus())) return false;
+
+        Calendar now = Calendar.getInstance();
+        Calendar classStart = Calendar.getInstance();
+        Calendar classEnd = Calendar.getInstance();
+
+        classStart.setTime(attendance.getStartTime());
+        classEnd.setTime(attendance.getEndTime());
+        classEnd.add(Calendar.MINUTE, 30); // 30 min buffer for marking
+
+        // Can mark attendance if within class time + buffer
+        return now.after(classStart) && now.before(classEnd);
+    }
+
+    private void appendClassInfo(SpannableStringBuilder builder, CourseClass courseClass) {
+        builder.append(courseClass.getModuleCode()).append("\n");
+        builder.append(courseClass.getModuleName()).append("\n");
+        builder.append(String.format("Section %s - %s",
+                courseClass.getSection(),
+                courseClass.getRoom()
+        )).append("\n");
+
+        if (courseClass.getStartTime() != null && courseClass.getEndTime() != null) {
+            builder.append(String.format("%s - %s",
+                    timeFormat.format(courseClass.getStartTime()),
+                    timeFormat.format(courseClass.getEndTime())
+            )).append("\n");
+        }
+    }
+
+    private void appendClassInfo(SpannableStringBuilder builder, Attendance attendance) {
+        builder.append(attendance.getModuleCode()).append("\n");
+        builder.append(attendance.getModuleName()).append("\n");
+        builder.append(String.format("Section %s - %s",
+                attendance.getSection(),
+                attendance.getRoom()
+        )).append("\n");
+
+        if (attendance.getStartTime() != null && attendance.getEndTime() != null) {
+            builder.append(String.format("%s - %s",
+                    timeFormat.format(attendance.getStartTime()),
+                    timeFormat.format(attendance.getEndTime())
+            )).append("\n");
+        }
+    }
+
+    private void appendAttendanceStatus(SpannableStringBuilder builder, String status) {
+        builder.append("Status: ");
+        String statusText = status != null ? status.toUpperCase() : "NOT MARKED";
+        SpannableString spannable = new SpannableString(statusText);
+
+        int color;
+        switch (statusText.toLowerCase()) {
+            case "present":
+                color = ContextCompat.getColor(this, android.R.color.holo_green_dark);
+                break;
+            case "late":
+            case "absent":
+                color = ContextCompat.getColor(this, android.R.color.holo_red_dark);
+                break;
+            default:
+                color = ContextCompat.getColor(this, android.R.color.darker_gray);
+                break;
+        }
+
+        spannable.setSpan(
+                new ForegroundColorSpan(color),
+                0,
+                statusText.length(),
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
+        builder.append(spannable);
+    }
+
+    private void markAttendance() {
+        // TODO: Implement mark attendance logic
+        // This would typically involve scanning QR code or other validation
+        Toast.makeText(this, "Mark attendance functionality coming soon", Toast.LENGTH_SHORT).show();
+    }
+
+    private void showNoClasses() {
+        textClassInfo.setText("No classes scheduled for today");
+        buttonMarkAttendance.setEnabled(false);
+        buttonViewClassAttendance.setEnabled(false);
     }
 
     private void showError(String message) {
         runOnUiThread(() -> {
-            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-            textClassInfo.setText("Error checking class schedule");
+            textClassInfo.setText("Error loading class information");
             buttonMarkAttendance.setEnabled(false);
+            buttonViewClassAttendance.setEnabled(false);
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
         });
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        checkCurrentClass();
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (dbHelper != null) {
-            dbHelper.cleanup();
-        }
+        loadDashboardData(User.ROLE_INSTRUCTOR.equals(sessionManager.getUserRole()));
     }
 }

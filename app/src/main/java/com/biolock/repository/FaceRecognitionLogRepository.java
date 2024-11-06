@@ -1,73 +1,83 @@
 package com.biolock.repository;
 
 import android.util.Log;
-import com.biolock.database.DatabaseHelper;
+
 import com.biolock.database.dao.FaceRecognitionLogDao;
 import com.biolock.model.FaceRecognitionLog;
+
 import java.sql.SQLException;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
 
 public class FaceRecognitionLogRepository {
-    private static final String TAG = "FaceRecognitionLogRepository";
-    private final DatabaseHelper dbHelper;
-    private final FaceRecognitionLogDao faceRecognitionLogDao;
+    private static final String TAG = "FaceRecognitionLogRepo";
+    private final FaceRecognitionLogDao logDao;
 
     public FaceRecognitionLogRepository() {
-        this.dbHelper = DatabaseHelper.getInstance();
-        this.faceRecognitionLogDao = new FaceRecognitionLogDao();
+        this.logDao = new FaceRecognitionLogDao();
     }
 
-    private void ensureInitialized() throws SQLException {
-        if (!dbHelper.isInitialized()) {
-            Log.d(TAG, "Initializing database for face recognition logs");
-            dbHelper.initialize();
-        }
-    }
-
-    public Result<Long> logAttempt(FaceRecognitionLog log) {
+    public Result<Void> logAttempt(FaceRecognitionLog log) {
         try {
-            ensureInitialized();
-            Log.d(TAG, "Logging face recognition attempt for user: " + log.getUserId());
-
-            long logId = faceRecognitionLogDao.insert(log);
-            Log.d(TAG, "Successfully logged attempt with ID: " + logId);
-
-            return Result.success(logId);
+            logDao.logAttempt(log);
+            return Result.success(null);
         } catch (SQLException e) {
-            Log.e(TAG, "Database error while logging attempt", e);
-            return Result.error(e);
+            Log.e(TAG, "Error logging attempt", e);
+            return Result.error("Failed to log attempt: " + e.getMessage());
         }
     }
 
-    public Result<List<FaceRecognitionLog>> getUserLogs(long userId) {
+    public Result<List<FaceRecognitionLog>> getUserLogs(Long userId) {
         try {
-            ensureInitialized();
-            Log.d(TAG, "Retrieving face recognition logs for user: " + userId);
+            // Get logs for last 30 days by default
+            Calendar cal = Calendar.getInstance();
+            cal.add(Calendar.DAY_OF_MONTH, -30);
+            java.sql.Date startDate = new java.sql.Date(cal.getTimeInMillis());
+            java.sql.Date endDate = new java.sql.Date(System.currentTimeMillis());
 
-            List<FaceRecognitionLog> logs = faceRecognitionLogDao.findByUserId(userId);
+            List<FaceRecognitionLog> logs = logDao.getLogsByDateRange(userId, startDate, endDate);
             return Result.success(logs);
         } catch (SQLException e) {
-            Log.e(TAG, "Database error while retrieving logs", e);
-            return Result.error(e);
+            Log.e(TAG, "Error getting user logs", e);
+            return Result.error("Failed to get logs: " + e.getMessage());
         }
     }
 
-    public Result<Boolean> checkSuspiciousActivity(long userId, String ipAddress) {
+    public Result<Boolean> hasRecentFailedAttempts(Long userId, int minutes) {
         try {
-            ensureInitialized();
-            Log.d(TAG, "Checking suspicious activity for user: " + userId);
+            Calendar cal = Calendar.getInstance();
+            cal.add(Calendar.MINUTE, -minutes);
+            java.sql.Date since = new java.sql.Date(cal.getTimeInMillis());
 
-            int recentFailures = faceRecognitionLogDao.countRecentFailedAttempts(userId, ipAddress, 30);
-            boolean suspicious = recentFailures >= 5;
-
-            if (suspicious) {
-                Log.w(TAG, "Detected suspicious activity for user: " + userId);
-            }
-
-            return Result.success(suspicious);
+            int failedAttempts = logDao.getFailedAttempts(userId, since);
+            return Result.success(failedAttempts > 0);
         } catch (SQLException e) {
-            Log.e(TAG, "Error checking suspicious activity", e);
-            return Result.error(e);
+            Log.e(TAG, "Error checking failed attempts", e);
+            return Result.error("Failed to check attempts: " + e.getMessage());
+        }
+    }
+
+    public Result<List<FaceRecognitionLog>> getRecentLogs(Long userId, int limit) {
+        try {
+            List<FaceRecognitionLog> logs = logDao.getRecentLogs(userId, limit);
+            return Result.success(logs);
+        } catch (SQLException e) {
+            Log.e(TAG, "Error getting recent logs", e);
+            return Result.error("Failed to get recent logs: " + e.getMessage());
+        }
+    }
+
+    public Result<List<FaceRecognitionLog>> getLogsByDateRange(Long userId, Date start, Date end) {
+        try {
+            java.sql.Date sqlStart = new java.sql.Date(start.getTime());
+            java.sql.Date sqlEnd = new java.sql.Date(end.getTime());
+
+            List<FaceRecognitionLog> logs = logDao.getLogsByDateRange(userId, sqlStart, sqlEnd);
+            return Result.success(logs);
+        } catch (SQLException e) {
+            Log.e(TAG, "Error getting logs by date range", e);
+            return Result.error("Failed to get logs: " + e.getMessage());
         }
     }
 }

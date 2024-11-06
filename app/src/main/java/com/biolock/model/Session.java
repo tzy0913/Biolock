@@ -1,28 +1,64 @@
 package com.biolock.model;
 
-import java.time.LocalDate;
-import java.time.LocalTime;
+import java.sql.Time;
+import java.util.Date;
 
 public class Session {
-    private int sessionId;
-    private int classId;
-    private LocalDate date;
-    private LocalTime startTime;
-    private LocalTime endTime;
+    private Long sessionId;
+    private Long classId;
+    private Date date;
+    private Time startTime;
+    private Time endTime;
+    private String validationCode;
 
-    // Getters and setters
-    public int getSessionId() { return sessionId; }
-    public void setSessionId(int sessionId) { this.sessionId = sessionId; }
+    public Session() {}
 
-    public int getClassId() { return classId; }
-    public void setClassId(int classId) { this.classId = classId; }
+    // Getters and Setters
+    public Long getSessionId() {
+        return sessionId;
+    }
 
-    public LocalDate getDate() { return date; }
-    public void setDate(LocalDate date) { this.date = date; }
+    public void setSessionId(Long sessionId) {
+        this.sessionId = sessionId;
+    }
 
-    public LocalTime getStartTime() { return startTime; }
-    public void setStartTime(LocalTime startTime) { this.startTime = startTime; }
+    public Long getClassId() {
+        return classId;
+    }
 
-    public LocalTime getEndTime() { return endTime; }
-    public void setEndTime(LocalTime endTime) { this.endTime = endTime; }
+    public void setClassId(Long classId) {
+        this.classId = classId;
+    }
+
+    public Date getDate() {
+        return date;
+    }
+
+    public void setDate(Date date) {
+        this.date = date;
+    }
+
+    public Time getStartTime() {
+        return startTime;
+    }
+
+    public void setStartTime(Time startTime) {
+        this.startTime = startTime;
+    }
+
+    public Time getEndTime() {
+        return endTime;
+    }
+
+    public void setEndTime(Time endTime) {
+        this.endTime = endTime;
+    }
+
+    public String getValidationCode() {
+        return validationCode;
+    }
+
+    public void setValidationCode(String validationCode) {
+        this.validationCode = validationCode;
+    }
 }

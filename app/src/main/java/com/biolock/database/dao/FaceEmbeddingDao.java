@@ -1,161 +1,136 @@
-// FaceEmbeddingDao.java
 package com.biolock.database.dao;
+
+import android.util.Log;
 
 import com.biolock.database.DatabaseHelper;
 import com.biolock.model.FaceEmbedding;
+
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
 public class FaceEmbeddingDao {
-    private final DatabaseHelper dbHelper;
+    private static final String TAG = "FaceEmbeddingDao";
 
-    public FaceEmbeddingDao() {
-        this.dbHelper = DatabaseHelper.getInstance();
-    }
-
-    public long insertOrUpdate(FaceEmbedding embedding) throws SQLException {
+    public byte[] getEmbedding(Long userId) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "INSERT INTO face_embeddings (user_id, embedding_data, confidence_score) " +
-                    "VALUES (?, ?, ?) " +
-                    "ON DUPLICATE KEY UPDATE " +
-                    "embedding_data = VALUES(embedding_data), " +
-                    "confidence_score = VALUES(confidence_score)";
+            String sql = "SELECT embedding_data FROM face_embeddings WHERE user_id = ?";
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, userId);
+            rs = stmt.executeQuery();
 
-                pstmt.setLong(1, embedding.getUserId());
-                pstmt.setBytes(2, embedding.getEmbeddingData());
-                pstmt.setDouble(3, embedding.getConfidenceScore());
-
-                int affectedRows = pstmt.executeUpdate();
-                if (affectedRows == 0) {
-                    throw new SQLException("Creating face embedding failed, no rows affected.");
-                }
-
-                try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
-                    if (generatedKeys.next()) {
-                        return generatedKeys.getLong(1);
-                    } else {
-                        throw new SQLException("Creating face embedding failed, no ID obtained.");
-                    }
-                }
+            if (rs.next()) {
+                Blob blob = rs.getBlob("embedding_data");
+                return blob.getBytes(1, (int) blob.length());
             }
+            return null;
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, rs);
         }
     }
 
-    public List<FaceEmbedding> findByUserId(long userId) throws SQLException {
+    public void save(Long userId, byte[] embeddingData, double confidenceScore) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "SELECT * FROM face_embeddings WHERE user_id = ? ORDER BY created_at DESC";
-            List<FaceEmbedding> embeddings = new ArrayList<>();
+            String sql = "INSERT INTO face_embeddings (user_id, embedding_data, confidence_score, created_at) " +
+                    "VALUES (?, ?, ?, NOW())";
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, userId);
+            stmt.setBytes(2, embeddingData);
+            stmt.setDouble(3, confidenceScore);
 
-                pstmt.setLong(1, userId);
-
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    while (rs.next()) {
-                        embeddings.add(mapResultSetToFaceEmbedding(rs));
-                    }
-                }
-            }
-            return embeddings;
+            stmt.executeUpdate();
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, null);
         }
     }
 
-    public FaceEmbedding findById(long embeddingId) throws SQLException {
+    public void update(Long userId, byte[] embeddingData, double confidenceScore) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "SELECT * FROM face_embeddings WHERE embedding_id = ?";
+            String sql = "UPDATE face_embeddings SET embedding_data = ?, confidence_score = ?, " +
+                    "created_at = NOW() WHERE user_id = ?";
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setBytes(1, embeddingData);
+            stmt.setDouble(2, confidenceScore);
+            stmt.setLong(3, userId);
 
-                pstmt.setLong(1, embeddingId);
-
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        return mapResultSetToFaceEmbedding(rs);
-                    }
-                    return null;
-                }
-            }
+            stmt.executeUpdate();
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, null);
         }
     }
 
-    public List<FaceEmbedding> findAll() throws SQLException {
+    public boolean hasEnrollment(Long userId) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "SELECT * FROM face_embeddings ORDER BY created_at DESC";
-            List<FaceEmbedding> embeddings = new ArrayList<>();
+            String sql = "SELECT COUNT(*) FROM face_embeddings WHERE user_id = ?";
 
-            try (Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(sql)) {
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, userId);
+            rs = stmt.executeQuery();
 
-                while (rs.next()) {
-                    embeddings.add(mapResultSetToFaceEmbedding(rs));
-                }
+            if (rs.next()) {
+                return rs.getInt(1) > 0;
             }
-            return embeddings;
+            return false;
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, rs);
         }
     }
 
-    public void delete(long embeddingId) throws SQLException {
+    public void delete(Long userId) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "DELETE FROM face_embeddings WHERE embedding_id = ?";
-
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-
-                pstmt.setLong(1, embeddingId);
-
-                int affectedRows = pstmt.executeUpdate();
-                if (affectedRows == 0) {
-                    throw new SQLException("Deleting face embedding failed, no embedding found with ID " +
-                            embeddingId);
-                }
-            }
-        } finally {
-            dbHelper.releaseConnection(conn);
-        }
-    }
-
-    public void deleteByUserId(long userId) throws SQLException {
-        Connection conn = null;
-        try {
-            conn = dbHelper.getConnection();
             String sql = "DELETE FROM face_embeddings WHERE user_id = ?";
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setLong(1, userId);
-                pstmt.executeUpdate();
-            }
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, userId);
+
+            stmt.executeUpdate();
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, null);
         }
     }
 
-    private FaceEmbedding mapResultSetToFaceEmbedding(ResultSet rs) throws SQLException {
-        FaceEmbedding embedding = new FaceEmbedding();
-        embedding.setEmbeddingId(rs.getLong("embedding_id"));
-        embedding.setUserId(rs.getLong("user_id"));
-        embedding.setEmbeddingData(rs.getBytes("embedding_data"));
-        embedding.setConfidenceScore(rs.getDouble("confidence_score"));
-        embedding.setCreatedAt(rs.getTimestamp("created_at"));
-        return embedding;
+    private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
+        if (rs != null) {
+            try {
+                rs.close();
+            } catch (SQLException e) {
+                Log.e(TAG, "Error closing ResultSet", e);
+            }
+        }
+        if (stmt != null) {
+            try {
+                stmt.close();
+            } catch (SQLException e) {
+                Log.e(TAG, "Error closing Statement", e);
+            }
+        }
+        if (conn != null) {
+            DatabaseHelper.getInstance().releaseConnection(conn);
+        }
     }
 }

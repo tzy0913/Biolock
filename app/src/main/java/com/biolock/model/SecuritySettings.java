@@ -1,27 +1,68 @@
 package com.biolock.model;
 
-import java.sql.Timestamp;
+import java.util.Date;
 
 public class SecuritySettings {
-    private long userId;
+    private Long userId;
     private int maxFailedAttempts;
     private int lockoutDurationMins;
-    private Timestamp lastFailedAttempt;
-    private int failedAttemptsCount;
+    private int currentFailedAttempts;
+    private Date lastFailedAttempt;
+    private Date lastUpdated;
 
-    // Getters and setters
-    public long getUserId() { return userId; }
-    public void setUserId(long userId) { this.userId = userId; }
+    public SecuritySettings() {
+        // Default settings
+        this.maxFailedAttempts = 3;
+        this.lockoutDurationMins = 15;
+        this.currentFailedAttempts = 0;
+    }
 
-    public int getMaxFailedAttempts() { return maxFailedAttempts; }
-    public void setMaxFailedAttempts(int maxFailedAttempts) { this.maxFailedAttempts = maxFailedAttempts; }
+    // Getters and Setters
+    public Long getUserId() {
+        return userId;
+    }
 
-    public int getLockoutDurationMins() { return lockoutDurationMins; }
-    public void setLockoutDurationMins(int lockoutDurationMins) { this.lockoutDurationMins = lockoutDurationMins; }
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
 
-    public Timestamp getLastFailedAttempt() { return lastFailedAttempt; }
-    public void setLastFailedAttempt(Timestamp lastFailedAttempt) { this.lastFailedAttempt = lastFailedAttempt; }
+    public int getMaxFailedAttempts() {
+        return maxFailedAttempts;
+    }
 
-    public int getFailedAttemptsCount() { return failedAttemptsCount; }
-    public void setFailedAttemptsCount(int failedAttemptsCount) { this.failedAttemptsCount = failedAttemptsCount; }
+    public void setMaxFailedAttempts(int maxFailedAttempts) {
+        this.maxFailedAttempts = maxFailedAttempts;
+    }
+
+    public int getLockoutDurationMins() {
+        return lockoutDurationMins;
+    }
+
+    public void setLockoutDurationMins(int lockoutDurationMins) {
+        this.lockoutDurationMins = lockoutDurationMins;
+    }
+
+    public int getCurrentFailedAttempts() {
+        return currentFailedAttempts;
+    }
+
+    public void setCurrentFailedAttempts(int currentFailedAttempts) {
+        this.currentFailedAttempts = currentFailedAttempts;
+    }
+
+    public Date getLastFailedAttempt() {
+        return lastFailedAttempt;
+    }
+
+    public void setLastFailedAttempt(Date lastFailedAttempt) {
+        this.lastFailedAttempt = lastFailedAttempt;
+    }
+
+    public Date getLastUpdated() {
+        return lastUpdated;
+    }
+
+    public void setLastUpdated(Date lastUpdated) {
+        this.lastUpdated = lastUpdated;
+    }
 }

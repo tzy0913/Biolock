@@ -3,7 +3,8 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="8dp"
+    android:layout_marginHorizontal="8dp"
+    android:layout_marginVertical="4dp"
     app:cardCornerRadius="8dp"
     app:cardElevation="2dp">
 
@@ -13,47 +14,55 @@
         android:orientation="vertical"
         android:padding="16dp">
 
+        <!-- Student Info (for instructor view) -->
         <TextView
-            android:id="@+id/textDate"
+            android:id="@+id/studentName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="14sp"
-            android:textStyle="italic"
-            android:visibility="gone"/>
-
-        <TextView
-            android:id="@+id/textModuleCode"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="18sp"
+            android:textSize="16sp"
             android:textStyle="bold"/>
 
         <TextView
-            android:id="@+id/textModuleName"
+            android:id="@+id/studentEmail"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="16sp"/>
+            android:textSize="14sp"
+            android:textColor="@android:color/darker_gray"/>
+
+        <!-- Class Info (for student view) -->
+        <TextView
+            android:id="@+id/moduleCode"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="16sp"
+            android:textStyle="bold"/>
 
         <TextView
-            android:id="@+id/textSection"
+            android:id="@+id/moduleName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="14sp"/>
 
         <TextView
-            android:id="@+id/textTime"
+            android:id="@+id/section"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"/>
+
+        <TextView
+            android:id="@+id/time"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="14sp"
             android:layout_marginTop="4dp"/>
 
         <TextView
-            android:id="@+id/textStatus"
+            android:id="@+id/status"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
             android:textSize="14sp"
-            android:textStyle="bold"
-            android:layout_marginTop="8dp"/>
-    </LinearLayout>
+            android:textStyle="bold"/>
 
+    </LinearLayout>
 </androidx.cardview.widget.CardView>

@@ -1,128 +1,135 @@
 package com.biolock.repository;
 
 import android.util.Log;
-import com.biolock.database.DatabaseHelper;
 import com.biolock.database.dao.AttendanceDao;
+import com.biolock.database.dao.ClassDao;
 import com.biolock.model.Attendance;
-import com.biolock.model.Session;
-import com.biolock.model.Class;
-import java.sql.SQLException;
+import com.biolock.model.CourseClass;
+import java.sql.Date;
 import java.time.LocalDate;
-import java.time.LocalTime;
-import java.util.ArrayList;
+import java.time.ZoneId;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 public class AttendanceRepository {
     private static final String TAG = "AttendanceRepository";
     private final AttendanceDao attendanceDao;
-    private final SessionRepository sessionRepository;
-    private final ClassRepository classRepository;
-    private final DatabaseHelper dbHelper;
+    private final ClassDao classDao;
 
     public AttendanceRepository() {
-        this.dbHelper = DatabaseHelper.getInstance();
         this.attendanceDao = new AttendanceDao();
-        this.sessionRepository = new SessionRepository();
-        this.classRepository = new ClassRepository();
+        this.classDao = new ClassDao();
     }
 
-    private void ensureInitialized() throws SQLException {
-        if (!dbHelper.isInitialized()) {
-            Log.d(TAG, "Initializing database for attendance operations");
-            dbHelper.initialize();
+    // Helper method to convert LocalDate to SQL Date
+    private Date toSqlDate(LocalDate date) {
+        return new Date(date.atStartOfDay(ZoneId.systemDefault())
+                .toInstant().toEpochMilli());
+    }
+
+    public Result<List<Attendance>> getCurrentSessionAttendance(Long sessionId) {
+        try {
+            List<Attendance> attendances = attendanceDao.getSessionAttendance(sessionId);
+            return Result.success(attendances);
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting session attendance", e);
+            return Result.error("Failed to get session attendance: " + e.getMessage());
         }
     }
 
-    public Result<Long> markAttendance(long userId, int sessionId) {
+    // For Today tab - Using date range with same start/end date
+    public Result<List<?>> getTodayAttendance(Long id, boolean isInstructor) {
         try {
-            ensureInitialized();
-            Log.d(TAG, "Marking attendance for user: " + userId + " session: " + sessionId);
+            LocalDate today = LocalDate.now();
+            Date sqlToday = toSqlDate(today);
 
-            Attendance attendance = new Attendance();
-            attendance.setUserId(userId);
-            attendance.setSessionId(sessionId);
-            attendance.setTimestamp(LocalTime.now());
-            attendance.setStatus("pending"); // Status will be set by database trigger
-
-            long attendanceId = attendanceDao.insert(attendance);
-            Log.d(TAG, "Successfully marked attendance with ID: " + attendanceId);
-
-            return Result.success(attendanceId);
-        } catch (SQLException e) {
-            Log.e(TAG, "Database error marking attendance", e);
-            return Result.error(e);
+            if (isInstructor) {
+                List<CourseClass> classes = classDao.findClassesByInstructor(id, sqlToday, sqlToday);
+                return Result.success(classes);
+            } else {
+                List<Attendance> attendances = classDao.findClassesByStudent(id, sqlToday, sqlToday);
+                return Result.success(attendances);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting today's attendance", e);
+            return Result.error("Failed to get today's attendance: " + e.getMessage());
         }
     }
 
-    public Result<List<Attendance>> getTodayAttendance(long userId) {
-        LocalDate today = LocalDate.now();
-        return getAttendanceByDateRange(userId, today, today);
+    // For Week tab
+    public Result<List<?>> getWeekAttendance(Long id, boolean isInstructor) {
+        try {
+            LocalDate now = LocalDate.now();
+            LocalDate monday = now.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
+            LocalDate sunday = monday.plusDays(6);
+
+            Date startDate = toSqlDate(monday);
+            Date endDate = toSqlDate(sunday);
+
+            if (isInstructor) {
+                List<CourseClass> classes = classDao.findClassesByInstructor(id, startDate, endDate);
+                return Result.success(classes);
+            } else {
+                List<Attendance> attendances = classDao.findClassesByStudent(id, startDate, endDate);
+                return Result.success(attendances);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting week attendance", e);
+            return Result.error("Failed to get week attendance: " + e.getMessage());
+        }
     }
 
-    public Result<List<Attendance>> getAttendanceByDateRange(long userId, LocalDate startDate, LocalDate endDate) {
+    // For Month tab
+    public Result<List<?>> getMonthAttendance(Long id, boolean isInstructor) {
         try {
-            ensureInitialized();
-            Log.d(TAG, "Getting sessions from " + startDate + " to " + endDate + " for user: " + userId);
+            LocalDate now = LocalDate.now();
+            LocalDate firstDay = now.withDayOfMonth(1);
+            LocalDate lastDay = now.withDayOfMonth(now.lengthOfMonth());
 
-            // First get sessions within date range
-            Result<List<Session>> sessionsResult = sessionRepository.getSessionsByDateRange(startDate, endDate);
-            if (!sessionsResult.isSuccess()) {
-                return Result.error(new Exception("Failed to fetch sessions"));
+            Date startDate = toSqlDate(firstDay);
+            Date endDate = toSqlDate(lastDay);
+
+            if (isInstructor) {
+                List<CourseClass> classes = classDao.findClassesByInstructor(id, startDate, endDate);
+                return Result.success(classes);
+            } else {
+                List<Attendance> attendances = classDao.findClassesByStudent(id, startDate, endDate);
+                return Result.success(attendances);
             }
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting month attendance", e);
+            return Result.error("Failed to get month attendance: " + e.getMessage());
+        }
+    }
 
-            // Get all attendance records for this user
-            List<Attendance> attendanceList = attendanceDao.getByUserId(userId);
-            Map<Integer, Attendance> attendanceMap = attendanceList.stream()
-                    .collect(Collectors.toMap(Attendance::getSessionId, a -> a));
+    // For specific date (used in month view when selecting a date)
+    public Result<List<?>> getDateAttendance(Long id, boolean isInstructor, LocalDate selectedDate) {
+        try {
+            Date sqlDate = toSqlDate(selectedDate);
 
-            // Create attendance objects for all sessions
-            List<Attendance> rangeAttendance = new ArrayList<>();
-            for (Session session : sessionsResult.getData()) {
-                Result<Class> classResult = classRepository.getClassById(session.getClassId());
-                if (!classResult.isSuccess()) continue;
-                Class classData = classResult.getData();
-
-                // Create or get attendance record
-                Attendance attendance;
-                if (attendanceMap.containsKey(session.getSessionId())) {
-                    // Use existing attendance record
-                    attendance = attendanceMap.get(session.getSessionId());
-                } else {
-                    // Create new attendance object for session without record
-                    attendance = new Attendance();
-                    attendance.setUserId(userId);
-                    attendance.setSessionId(session.getSessionId());
-                    attendance.setStatus("Not Marked");
-                }
-
-                // Set additional info from session and class
-                attendance.setSessionDate(session.getDate());
-                attendance.setStartTime(session.getStartTime());
-                attendance.setEndTime(session.getEndTime());
-                attendance.setModuleCode(classData.getModuleCode());
-                attendance.setModuleName(classData.getModuleName());
-                attendance.setSection(classData.getSection());
-                attendance.setRoom(classData.getRoom());
-
-                rangeAttendance.add(attendance);
+            if (isInstructor) {
+                // For instructor, pass same date as start and end
+                List<CourseClass> classes = classDao.findClassesByInstructor(id, sqlDate, sqlDate);
+                return Result.success(classes);
+            } else {
+                // For student, use the single date method
+                List<Attendance> attendances = classDao.findClassesByStudentForDate(id, sqlDate);
+                return Result.success(attendances);
             }
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting date attendance", e);
+            return Result.error("Failed to get date attendance: " + e.getMessage());
+        }
+    }
 
-            // Sort by date and time
-            rangeAttendance.sort((a1, a2) -> {
-                int dateCompare = a2.getSessionDate().compareTo(a1.getSessionDate()); // Latest first
-                if (dateCompare == 0) {
-                    return a2.getStartTime().compareTo(a1.getStartTime()); // Latest time first
-                }
-                return dateCompare;
-            });
-
-            Log.d(TAG, "Found " + rangeAttendance.size() + " sessions/attendance records");
-            return Result.success(rangeAttendance);
-        } catch (SQLException e) {
-            Log.e(TAG, "Database error getting attendance by date range", e);
-            return Result.error(e);
+    // For marking attendance
+    public Result<Void> markAttendance(Long userId, Long sessionId) {
+        try {
+            attendanceDao.markAttendance(userId, sessionId);
+            return Result.success(null);
+        } catch (Exception e) {
+            Log.e(TAG, "Error marking attendance", e);
+            return Result.error("Failed to mark attendance: " + e.getMessage());
         }
     }
 }

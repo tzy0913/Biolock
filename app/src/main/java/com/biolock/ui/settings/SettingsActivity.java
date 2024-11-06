@@ -14,25 +14,20 @@ import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import com.biolock.R;
-import com.biolock.repository.FaceEmbeddingRepository;
-import com.biolock.repository.FaceRecognitionLogRepository;
+import com.biolock.repository.FaceAuthenticationRepository;
 import com.biolock.repository.Result;
-import com.biolock.repository.SecuritySettingsRepository;
 import com.biolock.model.SecuritySettings;
-import com.biolock.utils.SecurityAssessment;
+import com.biolock.repository.UserRepository;
 import com.biolock.utils.SessionManager;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 
 public class SettingsActivity extends AppCompatActivity {
     private static final String TAG = "SettingsActivity";
 
     private SessionManager sessionManager;
-    private SecuritySettingsRepository securitySettingsRepository;
-    private FaceEmbeddingRepository faceEmbeddingRepository;
+    private UserRepository userRepository;
+    private FaceAuthenticationRepository faceAuthenticationRepository;
 
     private Switch switchBiometrics;
     private Button buttonEnrollFace;
@@ -43,12 +38,16 @@ public class SettingsActivity extends AppCompatActivity {
     private TextView textLastAssessment;
     private TextView textSecurityStatus;
 
+    // Constants for spinners
+    private static final int MAX_ALLOWED_ATTEMPTS = 5;
+    private static final int MAX_LOCKOUT_DURATION = 60; // minutes
+    private static final int LOCKOUT_DURATION_INTERVAL = 5; // minutes
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings);
 
-        // Enable back button in action bar
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         }
@@ -60,19 +59,16 @@ public class SettingsActivity extends AppCompatActivity {
         initializeViews();
         setupSpinners();
 
-        // Show progress while initializing
         ProgressDialog progress = new ProgressDialog(this);
         progress.setMessage("Loading settings...");
         progress.setCancelable(false);
         progress.show();
 
-        // Initialize on background thread
         new Thread(() -> {
             try {
-                // Initialize repositories
                 sessionManager = new SessionManager(this);
-                securitySettingsRepository = new SecuritySettingsRepository();
-                faceEmbeddingRepository = new FaceEmbeddingRepository();
+                userRepository = new UserRepository();
+                faceAuthenticationRepository = new FaceAuthenticationRepository(this);
 
                 runOnUiThread(() -> {
                     setupClickListeners();
@@ -101,7 +97,6 @@ public class SettingsActivity extends AppCompatActivity {
         textLastAssessment = findViewById(R.id.textLastAssessment);
         textSecurityStatus = findViewById(R.id.textSecurityStatus);
 
-        // Disable buttons initially
         disableButtons();
     }
 
@@ -120,9 +115,9 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void setupSpinners() {
-        // Setup max attempts spinner (1 to MAX_ALLOWED_ATTEMPTS)
+        // Max attempts spinner (1 to MAX_ALLOWED_ATTEMPTS)
         List<Integer> attemptsValues = new ArrayList<>();
-        for (int i = 1; i <= SecuritySettingsRepository.MAX_ALLOWED_ATTEMPTS; i++) {
+        for (int i = 1; i <= MAX_ALLOWED_ATTEMPTS; i++) {
             attemptsValues.add(i);
         }
         ArrayAdapter<Integer> attemptsAdapter = new ArrayAdapter<>(
@@ -130,11 +125,10 @@ public class SettingsActivity extends AppCompatActivity {
         attemptsAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerMaxAttempts.setAdapter(attemptsAdapter);
 
-        // Setup lockout duration spinner (5 to MAX_LOCKOUT_DURATION by INTERVAL)
+        // Lockout duration spinner
         List<Integer> durationValues = new ArrayList<>();
-        for (int i = SecuritySettingsRepository.LOCKOUT_DURATION_INTERVAL;
-             i <= SecuritySettingsRepository.MAX_LOCKOUT_DURATION;
-             i += SecuritySettingsRepository.LOCKOUT_DURATION_INTERVAL) {
+        for (int i = LOCKOUT_DURATION_INTERVAL; i <= MAX_LOCKOUT_DURATION;
+             i += LOCKOUT_DURATION_INTERVAL) {
             durationValues.add(i);
         }
         ArrayAdapter<Integer> durationAdapter = new ArrayAdapter<>(
@@ -145,8 +139,7 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void loadCurrentSettings() {
         new Thread(() -> {
-            Result<SecuritySettings> result = securitySettingsRepository.getSettings(sessionManager.getUserId());
-            Result<Boolean> hasFaceResult = faceEmbeddingRepository.hasFaceEmbedding(sessionManager.getUserId());
+            Result<SecuritySettings> result = userRepository.getSecuritySettings(sessionManager.getUserId());
 
             runOnUiThread(() -> {
                 if (result.isSuccess()) {
@@ -154,11 +147,7 @@ public class SettingsActivity extends AppCompatActivity {
                     updateSettingsUI(settings);
                 } else {
                     Toast.makeText(this, "Error loading settings: " +
-                            result.getError().getMessage(), Toast.LENGTH_SHORT).show();
-                }
-
-                if (hasFaceResult.isSuccess()) {
-                    updateBiometricUI(hasFaceResult.getData());
+                            result.getError(), Toast.LENGTH_SHORT).show();
                 }
             });
         }).start();
@@ -174,22 +163,19 @@ public class SettingsActivity extends AppCompatActivity {
         spinnerLockoutDuration.setSelection(durationPosition);
     }
 
-    private void updateBiometricUI(boolean hasFace) {
-        switchBiometrics.setChecked(hasFace);
-        buttonEnrollFace.setEnabled(!hasFace);
-        // Disable switch if face not enrolled
-        switchBiometrics.setEnabled(hasFace);
-    }
-
     private void setupClickListeners() {
         buttonSaveSecuritySettings.setOnClickListener(v -> saveSecuritySettings());
-        buttonSecurityCheck.setOnClickListener(v -> performSecurityCheck());
-        buttonEnrollFace.setOnClickListener(v -> startActivity(new Intent(this, FaceEnrollmentActivity.class)));
 
+        buttonEnrollFace.setOnClickListener(v ->
+                startActivity(new Intent(this, FaceEnrollmentActivity.class)));
+
+        buttonSecurityCheck.setOnClickListener(v ->
+                Toast.makeText(this, "Security check feature coming soon",
+                        Toast.LENGTH_SHORT).show());
+
+        // Updated biometrics switch handler
         switchBiometrics.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (!buttonView.isPressed()) {
-                return;
-            }
+            if (!buttonView.isPressed()) return;
 
             if (isChecked) {
                 switchBiometrics.setChecked(false);
@@ -197,10 +183,13 @@ public class SettingsActivity extends AppCompatActivity {
                 return;
             }
 
+            // Show confirmation dialog for disabling
             new AlertDialog.Builder(this)
                     .setTitle("Disable Face Recognition")
                     .setMessage("Are you sure you want to disable face recognition? This will delete your enrolled face data.")
-                    .setPositiveButton("Disable", (dialog, which) -> handleDisableFaceRecognition())
+                    .setPositiveButton("Disable", (dialog, which) -> {
+                        handleDisableFaceRecognition();
+                    })
                     .setNegativeButton("Cancel", (dialog, which) -> {
                         switchBiometrics.setChecked(true);
                     })
@@ -216,27 +205,25 @@ public class SettingsActivity extends AppCompatActivity {
 
         new Thread(() -> {
             try {
-                Result<Boolean> deleteResult = faceEmbeddingRepository.deleteFaceEmbedding(sessionManager.getUserId());
+                // Delete face embedding
+                Result<Boolean> result = faceAuthenticationRepository.deleteFace(sessionManager.getUserId());
 
                 runOnUiThread(() -> {
                     progress.dismiss();
-                    if (deleteResult.isSuccess()) {
+                    if (result.isSuccess()) {
                         Toast.makeText(this, "Face recognition disabled", Toast.LENGTH_SHORT).show();
-                        switchBiometrics.setChecked(false);
-                        buttonEnrollFace.setEnabled(true);
+                        updateBiometricUI(false);  // Update UI to reflect no face enrolled
                     } else {
-                        Toast.makeText(this,
-                                "Error disabling face recognition: " + deleteResult.getError().getMessage(),
-                                Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Error disabling face recognition: " +
+                                result.getError(), Toast.LENGTH_SHORT).show();
                         switchBiometrics.setChecked(true);
                     }
                 });
             } catch (Exception e) {
+                Log.e(TAG, "Error disabling face recognition", e);
                 runOnUiThread(() -> {
                     progress.dismiss();
-                    Toast.makeText(this,
-                            "Error disabling face recognition: " + e.getMessage(),
-                            Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Error disabling face recognition", Toast.LENGTH_SHORT).show();
                     switchBiometrics.setChecked(true);
                 });
             }
@@ -244,51 +231,26 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void saveSecuritySettings() {
-        SecuritySettings settings = new SecuritySettings();
-        settings.setUserId(sessionManager.getUserId());
-        settings.setMaxFailedAttempts((Integer) spinnerMaxAttempts.getSelectedItem());
-        settings.setLockoutDurationMins((Integer) spinnerLockoutDuration.getSelectedItem());
+        int maxAttempts = (Integer) spinnerMaxAttempts.getSelectedItem();
+        int lockoutDuration = (Integer) spinnerLockoutDuration.getSelectedItem();
 
         new Thread(() -> {
-            Result<SecuritySettings> result = securitySettingsRepository.updateSettings(settings);
+            Result<Boolean> result = userRepository.updateSecuritySettings(
+                    sessionManager.getUserId(),
+                    maxAttempts,
+                    lockoutDuration
+            );
+
             runOnUiThread(() -> {
                 if (result.isSuccess()) {
                     Toast.makeText(this, "Settings saved successfully",
                             Toast.LENGTH_SHORT).show();
                 } else {
                     Toast.makeText(this, "Error saving settings: " +
-                            result.getError().getMessage(), Toast.LENGTH_SHORT).show();
+                            result.getError(), Toast.LENGTH_SHORT).show();
                 }
             });
         }).start();
-    }
-
-    private void performSecurityCheck() {
-        new Thread(() -> {
-            Result<SecurityAssessment.SecurityMetrics> result =
-                    SecurityAssessment.analyzeSecurityStatus(
-                            sessionManager.getUserId(),
-                            faceEmbeddingRepository,
-                            new FaceRecognitionLogRepository()
-                    );
-
-            runOnUiThread(() -> {
-                updateLastCheckedTime();
-                if (result.isSuccess()) {
-                    String report = SecurityAssessment.formatSecurityReport(result.getData());
-                    textSecurityStatus.setText(report);
-                } else {
-                    textSecurityStatus.setText("Unable to assess security status: " +
-                            result.getError().getMessage());
-                }
-            });
-        }).start();
-    }
-
-    private void updateLastCheckedTime() {
-        SimpleDateFormat sdf = new SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault());
-        String currentTime = sdf.format(new Date());
-        textLastAssessment.setText("Last checked: " + currentTime);
     }
 
     private int findSpinnerPosition(Spinner spinner, int value) {
@@ -302,20 +264,33 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == android.R.id.home) {
+            onBackPressed();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         // Initialize repository if null
-        if (faceEmbeddingRepository == null) {
-            faceEmbeddingRepository = new FaceEmbeddingRepository();
+        if (faceAuthenticationRepository == null) {
+            faceAuthenticationRepository = new FaceAuthenticationRepository(this);
         }
 
-        // Check face enrollment status when returning from enrollment activity
+        // Check face enrollment status
         new Thread(() -> {
             try {
-                Result<Boolean> hasFaceResult = faceEmbeddingRepository.hasFaceEmbedding(sessionManager.getUserId());
+                Result<Boolean> hasFaceResult = faceAuthenticationRepository.hasFaceEnrolled(
+                        sessionManager.getUserId());
                 runOnUiThread(() -> {
                     if (hasFaceResult.isSuccess()) {
                         updateBiometricUI(hasFaceResult.getData());
+                    } else {
+                        Toast.makeText(this, "Error checking face enrollment: " +
+                                hasFaceResult.getError(), Toast.LENGTH_SHORT).show();
                     }
                 });
             } catch (Exception e) {
@@ -324,12 +299,10 @@ public class SettingsActivity extends AppCompatActivity {
         }).start();
     }
 
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == android.R.id.home) {
-            onBackPressed();
-            return true;
-        }
-        return super.onOptionsItemSelected(item);
+    private void updateBiometricUI(boolean hasFace) {
+        switchBiometrics.setChecked(hasFace);
+        buttonEnrollFace.setEnabled(!hasFace);
+        // Disable switch if face not enrolled
+        switchBiometrics.setEnabled(hasFace);
     }
 }

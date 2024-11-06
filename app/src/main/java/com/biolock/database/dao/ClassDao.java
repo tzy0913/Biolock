@@ -1,80 +1,255 @@
 package com.biolock.database.dao;
 
+import android.util.Log;
 import com.biolock.database.DatabaseHelper;
-import com.biolock.model.Class;
+import com.biolock.model.Attendance;
+import com.biolock.model.CourseClass;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
 public class ClassDao {
-    private final DatabaseHelper dbHelper;
+    private static final String TAG = "ClassDao";
 
-    public ClassDao() {
-        this.dbHelper = DatabaseHelper.getInstance();
-    }
-
-    public int insert(Class classData) throws SQLException {
+    // For instructors - get today's/period classes
+    public List<CourseClass> findClassesByInstructor(Long instructorId, Date startDate, Date endDate) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
         try {
-            conn = dbHelper.getConnection();
-            String sql = "INSERT INTO classes (module_code, module_name, section, type, instructor, room) VALUES (?, ?, ?, ?, ?, ?)";
+            String sql = "SELECT DISTINCT c.*, s.session_id, s.date, s.start_time, s.end_time " +
+                    "FROM classes c " +
+                    "JOIN sessions s ON c.class_id = s.class_id " +
+                    "WHERE c.instructor_id = ? AND s.date = ? " +
+                    "ORDER BY s.start_time";
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-                pstmt.setString(1, classData.getModuleCode());
-                pstmt.setString(2, classData.getModuleName());
-                pstmt.setString(3, classData.getSection());
-                pstmt.setString(4, classData.getType());
-                pstmt.setString(5, classData.getInstructor());
-                pstmt.setString(6, classData.getRoom());
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, instructorId);
+            stmt.setDate(2, startDate);
 
-                int affectedRows = pstmt.executeUpdate();
-                if (affectedRows == 0) {
-                    throw new SQLException("Creating class failed, no rows affected.");
-                }
+            // Log the query parameters
+            Log.d("ClassDao", "SQL: " + sql);
+            Log.d("ClassDao", "instructorId: " + instructorId + ", date: " + startDate);
 
-                try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
-                    if (generatedKeys.next()) {
-                        return generatedKeys.getInt(1);
-                    } else {
-                        throw new SQLException("Creating class failed, no ID obtained.");
-                    }
-                }
+            rs = stmt.executeQuery();
+
+            List<CourseClass> classes = new ArrayList<>();
+            while (rs.next()) {
+                CourseClass classObj = mapResultSetToClass(rs);
+                classObj.setSessionId(rs.getLong("session_id"));
+                classObj.setSessionDate(rs.getDate("date"));
+                classObj.setStartTime(rs.getTime("start_time"));
+                classObj.setEndTime(rs.getTime("end_time"));
+                classes.add(classObj);
+
+                // Log each class found
+                Log.d("ClassDao", String.format("Found class: ID=%d, Module=%s, Session=%d, Date=%s",
+                        classObj.getClassId(),
+                        classObj.getModuleCode(),
+                        classObj.getSessionId(),
+                        classObj.getSessionDate()));
             }
+            return classes;
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, rs);
         }
     }
 
-    public Class getById(int classId) throws SQLException {
+    // For students - get classes with attendance status if exists
+    public List<Attendance> findClassesByStudent(Long studentId, Date startDate, Date endDate) throws SQLException {
         Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
         try {
-            conn = dbHelper.getConnection();
+            String sql =
+                    "SELECT c.*, s.session_id, s.date, s.start_time, s.end_time, " +
+                            "a.attendance_id, a.timestamp, a.status, " +
+                            "CASE " +
+                            "   WHEN a.status IS NOT NULL THEN a.status " + // If attendance is marked, use that status
+                            "   WHEN NOW() < CONCAT(s.date, ' ', s.start_time) THEN 'upcoming' " + // Future class
+                            "   WHEN NOW() BETWEEN CONCAT(s.date, ' ', s.start_time) AND DATE_ADD(CONCAT(s.date, ' ', s.end_time), INTERVAL 30 MINUTE) THEN 'ongoing' " + // Current class (including 30 min grace period)
+                            "   ELSE 'absent' " + // Past class with no attendance
+                            "END as calculated_status " +
+                            "FROM classes c " +
+                            "JOIN class_assignments ca ON c.class_id = ca.class_id " +
+                            "JOIN sessions s ON c.class_id = s.class_id " +
+                            "LEFT JOIN attendance a ON s.session_id = a.session_id AND a.user_id = ? " +
+                            "WHERE ca.user_id = ? AND s.date BETWEEN ? AND ? " +
+                            "ORDER BY s.date, s.start_time";
+
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, studentId);
+            stmt.setLong(2, studentId);
+            stmt.setDate(3, startDate);
+            stmt.setDate(4, endDate);
+            rs = stmt.executeQuery();
+
+            List<Attendance> attendances = new ArrayList<>();
+            while (rs.next()) {
+                Attendance attendance = mapResultSetToAttendance(rs, studentId);
+                attendance.setStatus(rs.getString("calculated_status")); // Use the calculated status
+                attendances.add(attendance);
+            }
+            return attendances;
+        } finally {
+            closeResources(conn, stmt, rs);
+        }
+    }
+
+    public List<Attendance> findClassesByStudentForDate(Long studentId, Date date) throws SQLException {
+        Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
+        try {
+            String sql =
+                    "SELECT c.*, s.session_id, s.date, s.start_time, s.end_time, " +
+                            "a.attendance_id, a.timestamp, a.status, " +
+                            "CASE " +
+                            "   WHEN a.status IS NOT NULL THEN a.status " +
+                            "   WHEN NOW() < CONCAT(s.date, ' ', s.start_time) THEN 'upcoming' " +
+                            "   WHEN NOW() BETWEEN CONCAT(s.date, ' ', s.start_time) AND DATE_ADD(CONCAT(s.date, ' ', s.end_time), INTERVAL 30 MINUTE) THEN 'ongoing' " +
+                            "   ELSE 'absent' " +
+                            "END as calculated_status " +
+                            "FROM classes c " +
+                            "JOIN class_assignments ca ON c.class_id = ca.class_id " +
+                            "JOIN sessions s ON c.class_id = s.class_id " +
+                            "LEFT JOIN attendance a ON s.session_id = a.session_id AND a.user_id = ? " +
+                            "WHERE ca.user_id = ? AND DATE(s.date) = ? " +
+                            "ORDER BY s.start_time";
+
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, studentId);
+            stmt.setLong(2, studentId);
+            stmt.setDate(3, date);
+            rs = stmt.executeQuery();
+
+            List<Attendance> attendances = new ArrayList<>();
+            while (rs.next()) {
+                Attendance attendance = mapResultSetToAttendance(rs, studentId);
+                attendance.setStatus(rs.getString("calculated_status"));
+                attendances.add(attendance);
+            }
+            return attendances;
+        } finally {
+            closeResources(conn, stmt, rs);
+        }
+    }
+
+    // For date ranges (used by week view)
+    public List<Attendance> findClassesByStudentRange(Long studentId, Date startDate, Date endDate) throws SQLException {
+        Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
+        try {
+            String sql =
+                    "SELECT c.*, s.session_id, s.date, s.start_time, s.end_time, " +
+                            "a.attendance_id, a.timestamp, a.status, " +
+                            "CASE " +
+                            "   WHEN a.status IS NULL AND NOW() > DATE_ADD(CONCAT(s.date, ' ', s.end_time), INTERVAL 30 MINUTE) THEN 'absent' " +
+                            "   WHEN a.status IS NULL THEN NULL " +
+                            "   ELSE a.status " +
+                            "END as calculated_status " +
+                            "FROM classes c " +
+                            "JOIN class_assignments ca ON c.class_id = ca.class_id " +
+                            "JOIN sessions s ON c.class_id = s.class_id " +
+                            "LEFT JOIN attendance a ON s.session_id = a.session_id AND a.user_id = ? " +
+                            "WHERE ca.user_id = ? AND s.date BETWEEN ? AND ? " +
+                            "ORDER BY s.date, s.start_time";
+
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, studentId);
+            stmt.setLong(2, studentId);
+            stmt.setDate(3, startDate);
+            stmt.setDate(4, endDate);
+            rs = stmt.executeQuery();
+
+            List<Attendance> attendances = new ArrayList<>();
+            while (rs.next()) {
+                attendances.add(mapResultSetToAttendance(rs, studentId));
+            }
+            return attendances;
+        } finally {
+            closeResources(conn, stmt, rs);
+        }
+    }
+
+    // Get single class by ID
+    public CourseClass findClassById(Long classId) throws SQLException {
+        Connection conn = null;
+        PreparedStatement stmt = null;
+        ResultSet rs = null;
+
+        try {
             String sql = "SELECT * FROM classes WHERE class_id = ?";
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setInt(1, classId);
+            conn = DatabaseHelper.getInstance().getConnection();
+            stmt = conn.prepareStatement(sql);
+            stmt.setLong(1, classId);
+            rs = stmt.executeQuery();
 
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        return mapResultSetToClass(rs);
-                    }
-                    return null;
-                }
+            if (rs.next()) {
+                return mapResultSetToClass(rs);
             }
+            return null;
         } finally {
-            dbHelper.releaseConnection(conn);
+            closeResources(conn, stmt, rs);
         }
     }
 
-    private Class mapResultSetToClass(ResultSet rs) throws SQLException {
-        Class classData = new Class();
-        classData.setClassId(rs.getInt("class_id"));
-        classData.setModuleCode(rs.getString("module_code"));
-        classData.setModuleName(rs.getString("module_name"));
-        classData.setSection(rs.getString("section"));
-        classData.setType(rs.getString("type"));
-        classData.setInstructor(rs.getString("instructor"));
-        classData.setRoom(rs.getString("room"));
-        return classData;
+    private CourseClass mapResultSetToClass(ResultSet rs) throws SQLException {
+        CourseClass classObj = new CourseClass();
+        try {
+            classObj.setClassId(rs.getLong("class_id"));
+            classObj.setModuleCode(rs.getString("module_code"));
+            classObj.setModuleName(rs.getString("module_name"));
+            classObj.setSection(rs.getString("section"));
+            classObj.setType(rs.getString("type"));
+            classObj.setRoom(rs.getString("room"));
+            classObj.setInstructorId(rs.getLong("instructor_id"));
+            return classObj;
+        } catch (SQLException e) {
+            Log.e(TAG, "Error mapping result set to class", e);
+            throw e;
+        }
+    }
+
+    private Attendance mapResultSetToAttendance(ResultSet rs, Long studentId) throws SQLException {
+        Attendance attendance = new Attendance();
+        attendance.setAttendanceId(rs.getLong("attendance_id"));
+        attendance.setUserId(studentId);
+        attendance.setSessionId(rs.getLong("session_id"));
+        attendance.setTimestamp(rs.getTime("timestamp"));
+        attendance.setStatus(rs.getString("calculated_status")); // Use calculated status
+
+        // Session/class details
+        attendance.setSessionDate(rs.getDate("date"));
+        attendance.setStartTime(rs.getTime("start_time"));
+        attendance.setEndTime(rs.getTime("end_time"));
+        attendance.setModuleCode(rs.getString("module_code"));
+        attendance.setModuleName(rs.getString("module_name"));
+        attendance.setSection(rs.getString("section"));
+        attendance.setRoom(rs.getString("room"));
+
+        return attendance;
+    }
+
+    private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
+        if (rs != null) {
+            try { rs.close(); } catch (SQLException e) { Log.e(TAG, "Error closing ResultSet", e); }
+        }
+        if (stmt != null) {
+            try { stmt.close(); } catch (SQLException e) { Log.e(TAG, "Error closing Statement", e); }
+        }
+        if (conn != null) {
+            DatabaseHelper.getInstance().releaseConnection(conn);
+        }
     }
 }

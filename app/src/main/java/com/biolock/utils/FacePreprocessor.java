@@ -6,6 +6,7 @@ import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
+import com.google.mlkit.vision.face.Face;
 import android.media.Image;
 import android.util.Log;
 
@@ -177,5 +178,24 @@ public class FacePreprocessor {
         // Convert to Bitmap
         byte[] imageBytes = out.toByteArray();
         return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+    }
+
+    public static double calculateFaceConfidence(Face face) {
+        double baseConfidence = 0.4;  // Base confidence value
+        double angleWeight = 0.3;     // Weight for head angle
+        double rotationWeight = 0.3;  // Weight for head rotation
+        double maxAngle = 45.0;       // Maximum acceptable angle
+
+        // Get face angles using MLKit's Face methods
+        double angleConfidence = 1.0 - (Math.abs(face.getHeadEulerAngleY()) / maxAngle);
+        double rotationConfidence = 1.0 - (Math.abs(face.getHeadEulerAngleZ()) / maxAngle);
+
+        // Calculate weighted confidence
+        double confidence = baseConfidence +
+                (angleConfidence * angleWeight) +
+                (rotationConfidence * rotationWeight);
+
+        // Cap at 1.0
+        return Math.min(confidence, 1.0);
     }
 }

@@ -1,27 +1,61 @@
 package com.biolock.model;
 
-import java.sql.Timestamp;
+import java.util.Date;
 
 public class FaceEmbedding {
-    private long embeddingId;
-    private long userId;
+    private Long embeddingId;
+    private Long userId;
     private byte[] embeddingData;
     private double confidenceScore;
-    private Timestamp createdAt;
+    private Date createdAt;
 
-    // Getters and setters
-    public long getEmbeddingId() { return embeddingId; }
-    public void setEmbeddingId(long embeddingId) { this.embeddingId = embeddingId; }
+    public FaceEmbedding() {}
 
-    public long getUserId() { return userId; }
-    public void setUserId(long userId) { this.userId = userId; }
+    public FaceEmbedding(Long userId, byte[] embeddingData, double confidenceScore) {
+        this.userId = userId;
+        this.embeddingData = embeddingData;
+        this.confidenceScore = confidenceScore;
+        this.createdAt = new Date();
+    }
 
-    public byte[] getEmbeddingData() { return embeddingData; }
-    public void setEmbeddingData(byte[] embeddingData) { this.embeddingData = embeddingData; }
+    // Getters and Setters
+    public Long getEmbeddingId() {
+        return embeddingId;
+    }
 
-    public double getConfidenceScore() { return confidenceScore; }
-    public void setConfidenceScore(double confidenceScore) { this.confidenceScore = confidenceScore; }
+    public void setEmbeddingId(Long embeddingId) {
+        this.embeddingId = embeddingId;
+    }
 
-    public Timestamp getCreatedAt() { return createdAt; }
-    public void setCreatedAt(Timestamp createdAt) { this.createdAt = createdAt; }
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    public byte[] getEmbeddingData() {
+        return embeddingData;
+    }
+
+    public void setEmbeddingData(byte[] embeddingData) {
+        this.embeddingData = embeddingData;
+    }
+
+    public double getConfidenceScore() {
+        return confidenceScore;
+    }
+
+    public void setConfidenceScore(double confidenceScore) {
+        this.confidenceScore = confidenceScore;
+    }
+
+    public Date getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Date createdAt) {
+        this.createdAt = createdAt;
+    }
 }
