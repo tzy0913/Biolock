@@ -19,6 +19,7 @@ public class Attendance {
     private String moduleName;
     private String section;
     private String room;
+    private String validationCode;
 
     // User details for instructor view
     private String studentName;
@@ -146,5 +147,13 @@ public class Attendance {
 
     public void setStudentEmail(String studentEmail) {
         this.studentEmail = studentEmail;
+    }
+
+    public String getValidationCode() {
+        return validationCode;
+    }
+
+    public void setValidationCode(String validationCode) {
+        this.validationCode = validationCode;
     }
 }

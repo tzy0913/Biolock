@@ -57,20 +57,23 @@ public class AttendanceRepository {
     }
 
     // For Week tab
-    public Result<List<?>> getWeekAttendance(Long id, boolean isInstructor) {
+    public Result<List<?>> getWeekAttendance(Long id, boolean isInstructor,
+                                                     LocalDate startDate, LocalDate endDate) {
         try {
-            LocalDate now = LocalDate.now();
-            LocalDate monday = now.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
-            LocalDate sunday = monday.plusDays(6);
+            Date sqlStartDate = toSqlDate(startDate);
+            Date sqlEndDate = toSqlDate(endDate);
 
-            Date startDate = toSqlDate(monday);
-            Date endDate = toSqlDate(sunday);
+            Log.d(TAG, String.format("Getting attendance for week - ID: %d, IsInstructor: %b",
+                    id, isInstructor));
+            Log.d(TAG, String.format("Date range: %s to %s", sqlStartDate, sqlEndDate));
 
             if (isInstructor) {
-                List<CourseClass> classes = classDao.findClassesByInstructor(id, startDate, endDate);
+                List<CourseClass> classes = classDao.findClassesByInstructor(id, sqlStartDate, sqlEndDate);
+                Log.d(TAG, String.format("Found %d classes for instructor", classes.size()));
                 return Result.success(classes);
             } else {
-                List<Attendance> attendances = classDao.findClassesByStudent(id, startDate, endDate);
+                List<Attendance> attendances = classDao.findClassesByStudent(id, sqlStartDate, sqlEndDate);
+                Log.d(TAG, String.format("Found %d attendances for student", attendances.size()));
                 return Result.success(attendances);
             }
         } catch (Exception e) {

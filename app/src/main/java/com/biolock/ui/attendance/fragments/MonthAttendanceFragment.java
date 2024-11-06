@@ -101,18 +101,25 @@ public class MonthAttendanceFragment extends Fragment {
 
     private void loadSelectedDateAttendance() {
         new Thread(() -> {
-            boolean isInstructor = User.ROLE_INSTRUCTOR.equals(userRole);
-            Long id = isInstructor ? classId : sessionManager.getUserId();
+            try {
+                boolean isInstructor = User.ROLE_INSTRUCTOR.equals(userRole);
+                // Use instructor's ID instead of class ID
+                Long id = isInstructor ? sessionManager.getUserId() : sessionManager.getUserId();
 
-            Result<List<?>> result = attendanceRepository.getDateAttendance(id, isInstructor, selectedDate);
+                Result<List<?>> result = attendanceRepository.getDateAttendance(id, isInstructor, selectedDate);
 
-            requireActivity().runOnUiThread(() -> {
-                if (result.isSuccess()) {
-                    updateUI(result.getData());
-                } else {
-                    showError(result.getError());
-                }
-            });
+                requireActivity().runOnUiThread(() -> {
+                    if (result.isSuccess()) {
+                        List<?> items = result.getData();
+                        updateUI(items);
+                    } else {
+                        showError(result.getError());
+                    }
+                });
+            } catch (Exception e) {
+                requireActivity().runOnUiThread(() ->
+                        showError("Error loading date attendance: " + e.getMessage()));
+            }
         }).start();
     }
 

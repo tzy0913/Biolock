@@ -1,6 +1,7 @@
 package com.biolock.ui.attendance.fragments;
 
 import android.os.Bundle;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -116,18 +117,31 @@ public class WeekAttendanceFragment extends Fragment {
 
     private void loadWeekAttendance() {
         new Thread(() -> {
-            boolean isInstructor = User.ROLE_INSTRUCTOR.equals(userRole);
-            Long id = isInstructor ? classId : sessionManager.getUserId();
+            try {
+                boolean isInstructor = User.ROLE_INSTRUCTOR.equals(userRole);
+                Long id = isInstructor ? sessionManager.getUserId() : sessionManager.getUserId();
 
-            Result<List<?>> result = attendanceRepository.getWeekAttendance(id, isInstructor);
+                // Get first and last day of selected week
+                LocalDate start = weekStartDate;  // This is already Monday of selected week
+                LocalDate end = weekStartDate.plusDays(6);  // This is Sunday
 
-            requireActivity().runOnUiThread(() -> {
-                if (result.isSuccess()) {
-                    updateUI(result.getData());
-                } else {
-                    showError(result.getError());
-                }
-            });
+                Log.d("WeekAttendanceFragment", String.format("Loading week: %s to %s",
+                        start.toString(), end.toString()));
+
+                Result<List<?>> result = attendanceRepository.getWeekAttendance(id, isInstructor, start, end);
+
+                requireActivity().runOnUiThread(() -> {
+                    if (result.isSuccess()) {
+                        List<?> items = result.getData();
+                        updateUI(items);
+                    } else {
+                        showError(result.getError());
+                    }
+                });
+            } catch (Exception e) {
+                requireActivity().runOnUiThread(() ->
+                        showError("Error loading week attendance: " + e.getMessage()));
+            }
         }).start();
     }
 

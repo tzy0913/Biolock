@@ -18,39 +18,45 @@ public class ClassDao {
         ResultSet rs = null;
 
         try {
-            String sql = "SELECT DISTINCT c.*, s.session_id, s.date, s.start_time, s.end_time " +
+            String sql = "SELECT DISTINCT c.*, s.session_id, s.date, s.start_time, s.end_time, s.validation_code, " +
+                    "CASE " +
+                    "   WHEN NOW() < CONCAT(s.date, ' ', s.start_time) THEN 'UPCOMING' " +
+                    "   WHEN NOW() BETWEEN CONCAT(s.date, ' ', s.start_time) AND DATE_ADD(CONCAT(s.date, ' ', s.end_time), INTERVAL 30 MINUTE) THEN 'ONGOING' " +
+                    "   ELSE 'COMPLETED' " +
+                    "END as class_status " +
                     "FROM classes c " +
                     "JOIN sessions s ON c.class_id = s.class_id " +
-                    "WHERE c.instructor_id = ? AND s.date = ? " +
-                    "ORDER BY s.start_time";
+                    "WHERE c.instructor_id = ? AND s.date BETWEEN ? AND ? " +
+                    "ORDER BY s.date, s.start_time";
 
             conn = DatabaseHelper.getInstance().getConnection();
             stmt = conn.prepareStatement(sql);
             stmt.setLong(1, instructorId);
             stmt.setDate(2, startDate);
+            stmt.setDate(3, endDate);
 
             // Log the query parameters
             Log.d("ClassDao", "SQL: " + sql);
-            Log.d("ClassDao", "instructorId: " + instructorId + ", date: " + startDate);
+            Log.d("ClassDao", String.format("instructorId: %d, startDate: %s, endDate: %s",
+                    instructorId, startDate, endDate));
 
             rs = stmt.executeQuery();
 
             List<CourseClass> classes = new ArrayList<>();
             while (rs.next()) {
                 CourseClass classObj = mapResultSetToClass(rs);
-                classObj.setSessionId(rs.getLong("session_id"));
-                classObj.setSessionDate(rs.getDate("date"));
-                classObj.setStartTime(rs.getTime("start_time"));
-                classObj.setEndTime(rs.getTime("end_time"));
                 classes.add(classObj);
 
-                // Log each class found
-                Log.d("ClassDao", String.format("Found class: ID=%d, Module=%s, Session=%d, Date=%s",
+                Log.d("ClassDao", String.format("Found class: ID=%d, Module=%s, Session=%d, Date=%s, Status=%s, Code=%s",
                         classObj.getClassId(),
                         classObj.getModuleCode(),
                         classObj.getSessionId(),
-                        classObj.getSessionDate()));
+                        classObj.getSessionDate(),
+                        classObj.getStatus(),
+                        classObj.getValidationCode()));
             }
+
+            Log.d("ClassDao", "Total classes found: " + classes.size());
             return classes;
         } finally {
             closeResources(conn, stmt, rs);
@@ -65,13 +71,13 @@ public class ClassDao {
 
         try {
             String sql =
-                    "SELECT c.*, s.session_id, s.date, s.start_time, s.end_time, " +
+                    "SELECT c.*, s.session_id, s.date, s.start_time, s.end_time, s.validation_code, " +
                             "a.attendance_id, a.timestamp, a.status, " +
                             "CASE " +
-                            "   WHEN a.status IS NOT NULL THEN a.status " + // If attendance is marked, use that status
-                            "   WHEN NOW() < CONCAT(s.date, ' ', s.start_time) THEN 'upcoming' " + // Future class
-                            "   WHEN NOW() BETWEEN CONCAT(s.date, ' ', s.start_time) AND DATE_ADD(CONCAT(s.date, ' ', s.end_time), INTERVAL 30 MINUTE) THEN 'ongoing' " + // Current class (including 30 min grace period)
-                            "   ELSE 'absent' " + // Past class with no attendance
+                            "   WHEN a.status IS NOT NULL THEN UPPER(a.status) " + // Convert existing status to uppercase
+                            "   WHEN NOW() < CONCAT(s.date, ' ', s.start_time) THEN 'UPCOMING' " +
+                            "   WHEN NOW() BETWEEN CONCAT(s.date, ' ', s.start_time) AND DATE_ADD(CONCAT(s.date, ' ', s.end_time), INTERVAL 30 MINUTE) THEN 'ONGOING' " +
+                            "   ELSE 'ABSENT' " +
                             "END as calculated_status " +
                             "FROM classes c " +
                             "JOIN class_assignments ca ON c.class_id = ca.class_id " +
@@ -111,9 +117,9 @@ public class ClassDao {
                             "a.attendance_id, a.timestamp, a.status, " +
                             "CASE " +
                             "   WHEN a.status IS NOT NULL THEN a.status " +
-                            "   WHEN NOW() < CONCAT(s.date, ' ', s.start_time) THEN 'upcoming' " +
-                            "   WHEN NOW() BETWEEN CONCAT(s.date, ' ', s.start_time) AND DATE_ADD(CONCAT(s.date, ' ', s.end_time), INTERVAL 30 MINUTE) THEN 'ongoing' " +
-                            "   ELSE 'absent' " +
+                            "   WHEN NOW() < CONCAT(s.date, ' ', s.start_time) THEN 'UPCOMING' " +
+                            "   WHEN NOW() BETWEEN CONCAT(s.date, ' ', s.start_time) AND DATE_ADD(CONCAT(s.date, ' ', s.end_time), INTERVAL 30 MINUTE) THEN 'ONGOING' " +
+                            "   ELSE 'ABSENT' " +
                             "END as calculated_status " +
                             "FROM classes c " +
                             "JOIN class_assignments ca ON c.class_id = ca.class_id " +
@@ -214,6 +220,13 @@ public class ClassDao {
             classObj.setType(rs.getString("type"));
             classObj.setRoom(rs.getString("room"));
             classObj.setInstructorId(rs.getLong("instructor_id"));
+
+            classObj.setSessionId(rs.getLong("session_id"));
+            classObj.setSessionDate(rs.getDate("date"));
+            classObj.setStartTime(rs.getTime("start_time"));
+            classObj.setEndTime(rs.getTime("end_time"));
+            classObj.setStatus(rs.getString("class_status"));
+            classObj.setValidationCode(rs.getString("validation_code"));
             return classObj;
         } catch (SQLException e) {
             Log.e(TAG, "Error mapping result set to class", e);
@@ -237,6 +250,7 @@ public class ClassDao {
         attendance.setModuleName(rs.getString("module_name"));
         attendance.setSection(rs.getString("section"));
         attendance.setRoom(rs.getString("room"));
+        attendance.setValidationCode(rs.getString("validation_code"));
 
         return attendance;
     }

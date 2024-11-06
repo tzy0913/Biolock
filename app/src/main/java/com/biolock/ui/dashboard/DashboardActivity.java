@@ -1,15 +1,24 @@
 package com.biolock.ui.dashboard;
 
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.text.InputFilter;
+import android.text.InputType;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.style.ForegroundColorSpan;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -20,6 +29,7 @@ import com.biolock.model.Attendance;
 import com.biolock.model.CourseClass;
 import com.biolock.repository.AttendanceRepository;
 import com.biolock.repository.Result;
+import com.biolock.repository.SessionRepository;
 import com.biolock.ui.attendance.ViewAttendanceActivity;
 import com.biolock.ui.login.LoginActivity;
 import com.biolock.ui.settings.SettingsActivity;
@@ -37,11 +47,16 @@ public class DashboardActivity extends AppCompatActivity {
     private Button buttonMarkAttendance;
     private Button buttonViewAttendance;
     private LinearLayout sessionButtons;
+    private Button buttonStartSession;
+    private Button buttonEndSession;
+    private AlertDialog sessionCodeDialog;
     private Button buttonViewClassAttendance;
     private Button buttonAttendanceStatistics;
     private AttendanceRepository attendanceRepository;
+    private SessionRepository sessionRepository;
     private SessionManager sessionManager;
     private SimpleDateFormat timeFormat;
+    private List<Attendance> attendanceList;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -58,12 +73,15 @@ public class DashboardActivity extends AppCompatActivity {
         buttonMarkAttendance = findViewById(R.id.buttonMarkAttendance);
         buttonViewAttendance = findViewById(R.id.buttonViewAttendance);
         sessionButtons = findViewById(R.id.sessionButtons);
+        buttonStartSession = findViewById(R.id.buttonStartSession);
+        buttonEndSession = findViewById(R.id.buttonEndSession);
         buttonViewClassAttendance = findViewById(R.id.buttonViewClassAttendance);
         buttonAttendanceStatistics = findViewById(R.id.buttonAttendanceStatistics);
 
         timeFormat = new SimpleDateFormat("h:mm a", Locale.getDefault());
         sessionManager = new SessionManager(this);
         attendanceRepository = new AttendanceRepository();
+        sessionRepository = new SessionRepository();
 
         // Set greeting
         textGreeting.setText(String.format("Hi, %s!", sessionManager.getUserName()));
@@ -107,6 +125,10 @@ public class DashboardActivity extends AppCompatActivity {
                 }
                 startActivity(intent);
             });
+
+            // Add session button listeners
+            buttonStartSession.setOnClickListener(v -> startSession());
+            buttonEndSession.setOnClickListener(v -> showEndSessionDialog());
         } else {
             buttonMarkAttendance.setOnClickListener(v -> markAttendance());
             buttonViewAttendance.setOnClickListener(v ->
@@ -152,11 +174,88 @@ public class DashboardActivity extends AppCompatActivity {
             appendClassInfo(builder, currentClass);
             textClassInfo.setText(builder);
             buttonViewClassAttendance.setEnabled(true);
+
+            // Enable/disable session buttons based on validation code and status
+            boolean canStart = "ONGOING".equals(currentClass.getStatus())
+                    && currentClass.getValidationCode() == null;
+            boolean canEnd = "ONGOING".equals(currentClass.getStatus())
+                    && currentClass.getValidationCode() != null;
+
+            buttonStartSession.setEnabled(canStart);
+            buttonEndSession.setEnabled(canEnd);
         });
+    }
+
+    private void startSession() {
+        CourseClass currentClass = CourseClass.getCurrentClass();
+        if (currentClass == null || currentClass.getSessionId() == null) {
+            Toast.makeText(this, "No active class session", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        new Thread(() -> {
+            Result<String> result = sessionRepository.startSession(currentClass.getSessionId());
+            runOnUiThread(() -> {
+                if (result.isSuccess()) {
+                    showSessionCodeDialog(result.getData());
+                    buttonStartSession.setEnabled(false);
+                    buttonEndSession.setEnabled(true);
+                    loadDashboardData(true); // Refresh dashboard
+                } else {
+                    Toast.makeText(this, result.getError(), Toast.LENGTH_LONG).show();
+                }
+            });
+        }).start();
+    }
+
+    private void showSessionCodeDialog(String code) {
+        new AlertDialog.Builder(this)
+                .setTitle("Session Started")
+                .setMessage(String.format("Share this code with your students:\n\n%s", code))
+                .setPositiveButton("Copy Code", (dialog, which) -> {
+                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                    ClipData clip = ClipData.newPlainText("Session Code", code);
+                    clipboard.setPrimaryClip(clip);
+                    Toast.makeText(this, "Code copied to clipboard", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    private void showEndSessionDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("End Session Early")
+                .setMessage("Are you sure you want to end the session now? This will update the end time to current time.")
+                .setPositiveButton("End Session", (dialog, which) -> endSession())
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void endSession() {
+        CourseClass currentClass = CourseClass.getCurrentClass();
+        if (currentClass == null || currentClass.getSessionId() == null) {
+            Toast.makeText(this, "No active session", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        new Thread(() -> {
+            Result<Void> result = sessionRepository.endSession(currentClass.getSessionId());
+            runOnUiThread(() -> {
+                if (result.isSuccess()) {
+                    Toast.makeText(this, "Session ended", Toast.LENGTH_SHORT).show();
+                    buttonStartSession.setEnabled(true);
+                    buttonEndSession.setEnabled(false);
+                    loadDashboardData(true); // Refresh dashboard
+                } else {
+                    Toast.makeText(this, result.getError(), Toast.LENGTH_LONG).show();
+                }
+            });
+        }).start();
     }
 
     private void handleStudentData(List<Attendance> attendances) {
         runOnUiThread(() -> {
+            this.attendanceList = attendances;
             Attendance currentAttendance = findCurrentOrUpcomingClass(attendances);
             if (currentAttendance == null) {
                 showNoClasses();
@@ -167,7 +266,25 @@ public class DashboardActivity extends AppCompatActivity {
             appendClassInfo(builder, currentAttendance);
             appendAttendanceStatus(builder, currentAttendance.getStatus());
             textClassInfo.setText(builder);
-            buttonMarkAttendance.setEnabled(canMarkAttendance(currentAttendance));
+
+            // Can mark if:
+            // 1. Class is ONGOING
+            // 2. Has validation code
+            // 3. No actual attendance record yet (attendance ID should be 0 or null)
+            boolean isOngoing = "ONGOING".equals(currentAttendance.getStatus());
+            boolean hasCode = currentAttendance.getValidationCode() != null;
+            boolean notMarked = currentAttendance.getAttendanceId() == null ||
+                    currentAttendance.getAttendanceId() == 0;
+
+            Log.d(TAG, "Current Status: " + currentAttendance.getStatus());
+            Log.d(TAG, "Validation Code: " + currentAttendance.getValidationCode());
+            Log.d(TAG, "Attendance ID: " + currentAttendance.getAttendanceId());
+            Log.d(TAG, "isOngoing: " + isOngoing);
+            Log.d(TAG, "hasCode: " + hasCode);
+            Log.d(TAG, "notMarked: " + notMarked);
+
+            buttonMarkAttendance.setEnabled(isOngoing && hasCode && notMarked);
+            buttonMarkAttendance.setText("Mark Attendance");
         });
     }
 
@@ -206,18 +323,14 @@ public class DashboardActivity extends AppCompatActivity {
 
     private boolean canMarkAttendance(Attendance attendance) {
         if (attendance == null) return false;
-        if ("present".equalsIgnoreCase(attendance.getStatus())) return false;
 
-        Calendar now = Calendar.getInstance();
-        Calendar classStart = Calendar.getInstance();
-        Calendar classEnd = Calendar.getInstance();
+        // Can mark if:
+        // 1. Not already marked (status is pending/not marked)
+        // 2. Session has validation code
+        boolean notMarked = "pending".equalsIgnoreCase(attendance.getStatus()) ||
+                "NOT MARKED".equalsIgnoreCase(attendance.getStatus());
 
-        classStart.setTime(attendance.getStartTime());
-        classEnd.setTime(attendance.getEndTime());
-        classEnd.add(Calendar.MINUTE, 30); // 30 min buffer for marking
-
-        // Can mark attendance if within class time + buffer
-        return now.after(classStart) && now.before(classEnd);
+        return notMarked && attendance.getValidationCode() != null;
     }
 
     private void appendClassInfo(SpannableStringBuilder builder, CourseClass courseClass) {
@@ -234,6 +347,35 @@ public class DashboardActivity extends AppCompatActivity {
                     timeFormat.format(courseClass.getEndTime())
             )).append("\n");
         }
+
+        // Add status with color
+        builder.append("Status: ");
+        String statusText = courseClass.getStatus() != null ? courseClass.getStatus() : "NOT MARKED";
+        SpannableString spannable = new SpannableString(statusText);
+
+        int color;
+        switch (statusText) {
+            case "COMPLETED":
+                color = ContextCompat.getColor(this, android.R.color.holo_green_dark);
+                break;
+            case "ONGOING":
+                color = ContextCompat.getColor(this, android.R.color.holo_blue_dark);
+                break;
+            case "UPCOMING":
+                color = ContextCompat.getColor(this, android.R.color.darker_gray);
+                break;
+            default:
+                color = ContextCompat.getColor(this, android.R.color.darker_gray);
+                break;
+        }
+
+        spannable.setSpan(
+                new ForegroundColorSpan(color),
+                0,
+                statusText.length(),
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
+        builder.append(spannable);
     }
 
     private void appendClassInfo(SpannableStringBuilder builder, Attendance attendance) {
@@ -258,12 +400,12 @@ public class DashboardActivity extends AppCompatActivity {
         SpannableString spannable = new SpannableString(statusText);
 
         int color;
-        switch (statusText.toLowerCase()) {
-            case "present":
+        switch (statusText) {
+            case "PRESENT":
                 color = ContextCompat.getColor(this, android.R.color.holo_green_dark);
                 break;
-            case "late":
-            case "absent":
+            case "LATE":
+            case "ABSENT":
                 color = ContextCompat.getColor(this, android.R.color.holo_red_dark);
                 break;
             default:
@@ -281,23 +423,121 @@ public class DashboardActivity extends AppCompatActivity {
     }
 
     private void markAttendance() {
-        // TODO: Implement mark attendance logic
-        // This would typically involve scanning QR code or other validation
-        Toast.makeText(this, "Mark attendance functionality coming soon", Toast.LENGTH_SHORT).show();
+        // Get current attendance session
+        Attendance currentAttendance = findCurrentOrUpcomingClass(attendanceList);
+        if (currentAttendance == null || currentAttendance.getSessionId() == null) {
+            Toast.makeText(this, "No active session found", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Create simple input dialog
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Enter Attendance Code");
+
+        // Set up the input
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        input.setFilters(new InputFilter[] { new InputFilter.LengthFilter(6) }); // Limit to 6 digits
+        input.setGravity(Gravity.CENTER);
+        input.setHint("Enter 6-digit code");
+
+        // Add padding to the input
+        LinearLayout container = new LinearLayout(this);
+        container.setPadding(60, 40, 60, 20);
+        container.addView(input);
+        builder.setView(container);
+
+        builder.setPositiveButton("Submit", null); // Set to null initially
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
+
+        AlertDialog dialog = builder.create();
+
+        // Override the positive button click to prevent dialog dismissal on error
+        dialog.setOnShowListener(dialogInterface -> {
+            Button submitButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            submitButton.setOnClickListener(view -> {
+                String code = input.getText().toString().trim();
+                if (!code.matches("\\d{6}")) {
+                    input.setError("Please enter a valid 6-digit code");
+                    return;
+                }
+
+                submitButton.setEnabled(false);
+                submitButton.setText("Verifying...");
+
+                // Validate code and mark attendance
+                new Thread(() -> {
+                    try {
+                        // First validate the code
+                        Result<Boolean> validationResult = sessionRepository.validateCode(
+                                currentAttendance.getSessionId(),
+                                code
+                        );
+
+                        if (!validationResult.isSuccess() || !validationResult.getData()) {
+                            showError("Invalid code. Please try again.", input, submitButton);
+                            return;
+                        }
+
+                        // If code is valid, mark attendance
+                        Result<Void> markResult = attendanceRepository.markAttendance(
+                                sessionManager.getUserId(),
+                                currentAttendance.getSessionId()
+                        );
+
+                        if (!markResult.isSuccess()) {
+                            showError("Failed to mark attendance. Please try again.", input, submitButton);
+                            return;
+                        }
+
+                        // Success - update UI
+                        runOnUiThread(() -> {
+                            dialog.dismiss();
+                            Toast.makeText(this, "Attendance marked successfully!", Toast.LENGTH_LONG).show();
+                            loadDashboardData(false); // Refresh dashboard
+                        });
+
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error in validateAndMarkAttendance", e);
+                        showError("An error occurred. Please try again.", input, submitButton);
+                    }
+                }).start();
+            });
+        });
+
+        dialog.show();
+
+        // Set focus to input and show keyboard
+        input.requestFocus();
+        dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
     }
 
     private void showNoClasses() {
         textClassInfo.setText("No classes scheduled for today");
         buttonMarkAttendance.setEnabled(false);
-        buttonViewClassAttendance.setEnabled(false);
+        buttonStartSession.setEnabled(false);
+        buttonEndSession.setEnabled(false);
     }
 
-    private void showError(String message) {
+    private void showError(String message, Object... params) {
         runOnUiThread(() -> {
-            textClassInfo.setText("Error loading class information");
-            buttonMarkAttendance.setEnabled(false);
-            buttonViewClassAttendance.setEnabled(false);
+            // Show toast message for all error cases
             Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+
+            // Handle dialog-specific error UI updates
+            if (params != null && params.length >= 2 && params[0] instanceof EditText && params[1] instanceof Button) {
+                EditText input = (EditText) params[0];
+                Button submitButton = (Button) params[1];
+                input.setError(message);
+                submitButton.setEnabled(true);
+                submitButton.setText("Submit");
+            }
+            // Handle dashboard-specific error UI updates
+            else {
+                textClassInfo.setText("Error loading class information");
+                buttonMarkAttendance.setEnabled(false);
+                buttonViewClassAttendance.setEnabled(false);
+            }
         });
     }
 

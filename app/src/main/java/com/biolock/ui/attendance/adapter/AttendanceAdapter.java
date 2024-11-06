@@ -69,6 +69,7 @@ public class AttendanceAdapter extends RecyclerView.Adapter<AttendanceAdapter.At
         private final TextView section;
         private final TextView time;
         private final SimpleDateFormat timeFormat;
+        private final SimpleDateFormat dateFormat;
 
         public AttendanceViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -80,6 +81,7 @@ public class AttendanceAdapter extends RecyclerView.Adapter<AttendanceAdapter.At
             section = itemView.findViewById(R.id.section);
             time = itemView.findViewById(R.id.time);
             timeFormat = new SimpleDateFormat("h:mm a", Locale.getDefault());
+            dateFormat = new SimpleDateFormat("MMM d", Locale.getDefault());
         }
 
         void bind(Attendance attendance, boolean showDate, boolean isInstructorView) {
@@ -109,52 +111,41 @@ public class AttendanceAdapter extends RecyclerView.Adapter<AttendanceAdapter.At
                 section.setText(String.format("Section %s - %s",
                         attendance.getSection(),
                         attendance.getRoom()));
+
+                // Format date and time
+                if (attendance.getStartTime() != null && attendance.getEndTime() != null) {
+                    String timeString;
+                    if (showDate && attendance.getSessionDate() != null) {
+                        timeString = String.format("%s, %s - %s",
+                                dateFormat.format(attendance.getSessionDate()),
+                                timeFormat.format(attendance.getStartTime()),
+                                timeFormat.format(attendance.getEndTime()));
+                    } else {
+                        timeString = String.format("%s - %s",
+                                timeFormat.format(attendance.getStartTime()),
+                                timeFormat.format(attendance.getEndTime()));
+                    }
+                    time.setText(timeString);
+                    time.setVisibility(View.VISIBLE);
+                } else {
+                    time.setVisibility(View.GONE);
+                }
             }
 
-            // Show time if available
-            if (attendance.getStartTime() != null && attendance.getEndTime() != null) {
-                String timeText = String.format("%s - %s",
-                        timeFormat.format(attendance.getStartTime()),
-                        timeFormat.format(attendance.getEndTime()));
-                time.setText(timeText);
-                time.setVisibility(View.VISIBLE);
-            } else {
-                time.setVisibility(View.GONE);
-            }
-
-            String statusText = attendance.getStatus();
-            if (attendance.getTimestamp() != null) {
-                statusText += " (" + timeFormat.format(attendance.getTimestamp()) + ")";
-            }
-            status.setText(statusText);
-
-            Context context = itemView.getContext();
-            int textColor;
-            switch (attendance.getStatus().toLowerCase()) {
-                case "present":
-                    textColor = ContextCompat.getColor(context, android.R.color.holo_green_dark);
-                    break;
-                case "late":
-                case "absent":
-                    textColor = ContextCompat.getColor(context, android.R.color.holo_red_dark);
-                    break;
-                default:
-                    textColor = ContextCompat.getColor(context, android.R.color.darker_gray);
-                    break;
-            }
-            status.setTextColor(textColor);
+            // Set status with color
+            setStatusWithColor(status, attendance.getStatus());
         }
 
         void bindCourseClass(CourseClass courseClass, boolean showDate) {
             // Hide student views
             studentName.setVisibility(View.GONE);
             studentEmail.setVisibility(View.GONE);
-            status.setVisibility(View.GONE);
 
             // Show class details
             moduleCode.setVisibility(View.VISIBLE);
             moduleName.setVisibility(View.VISIBLE);
             section.setVisibility(View.VISIBLE);
+            status.setVisibility(View.VISIBLE);
 
             moduleCode.setText(courseClass.getModuleCode());
             moduleName.setText(courseClass.getModuleName());
@@ -162,15 +153,64 @@ public class AttendanceAdapter extends RecyclerView.Adapter<AttendanceAdapter.At
                     courseClass.getSection(),
                     courseClass.getRoom()));
 
+            // Format date and time
             if (courseClass.getStartTime() != null && courseClass.getEndTime() != null) {
-                String timeText = String.format("%s - %s",
-                        timeFormat.format(courseClass.getStartTime()),
-                        timeFormat.format(courseClass.getEndTime()));
-                time.setText(timeText);
+                String timeString;
+                if (showDate && courseClass.getSessionDate() != null) {
+                    timeString = String.format("%s, %s - %s",
+                            dateFormat.format(courseClass.getSessionDate()),
+                            timeFormat.format(courseClass.getStartTime()),
+                            timeFormat.format(courseClass.getEndTime()));
+                } else {
+                    timeString = String.format("%s - %s",
+                            timeFormat.format(courseClass.getStartTime()),
+                            timeFormat.format(courseClass.getEndTime()));
+                }
+                time.setText(timeString);
                 time.setVisibility(View.VISIBLE);
             } else {
                 time.setVisibility(View.GONE);
             }
+
+            // Set status with color
+            setStatusWithColor(status, courseClass.getStatus());
+        }
+
+        private void setStatusWithColor(TextView statusView, String status) {
+            if (status == null) {
+                statusView.setVisibility(View.GONE);
+                return;
+            }
+
+            statusView.setText(status);
+
+            Context context = statusView.getContext();
+            int textColor;
+
+            switch (status) {
+                case "PRESENT":
+                case "COMPLETED":
+                    textColor = ContextCompat.getColor(context, android.R.color.holo_green_dark);
+                    break;
+                case "ONGOING":
+                    textColor = ContextCompat.getColor(context, android.R.color.holo_blue_dark);
+                    break;
+                case "UPCOMING":
+                    textColor = ContextCompat.getColor(context, android.R.color.darker_gray);
+                    break;
+                case "LATE":
+                    textColor = ContextCompat.getColor(context, android.R.color.holo_red_dark);
+                    break;
+                case "ABSENT":
+                    textColor = ContextCompat.getColor(context, android.R.color.holo_red_dark);
+                    break;
+                default:
+                    textColor = ContextCompat.getColor(context, android.R.color.darker_gray);
+                    break;
+            }
+
+            statusView.setTextColor(textColor);
+            statusView.setVisibility(View.VISIBLE);
         }
     }
 }

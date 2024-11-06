@@ -17,6 +17,7 @@ public class CourseClass {
     private Time startTime;
     private Time endTime;
     private String status;
+    private String validationCode;
 
     private static CourseClass currentClass;
 
@@ -127,5 +128,13 @@ public class CourseClass {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getValidationCode() {
+        return validationCode;
+    }
+
+    public void setValidationCode(String validationCode) {
+        this.validationCode = validationCode;
     }
 }
