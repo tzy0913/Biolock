@@ -34,7 +34,11 @@
         <activity android:name="com.biolock.ui.dashboard.DashboardActivity" />
         <activity android:name="com.biolock.ui.settings.SettingsActivity" />
         <activity android:name="com.biolock.ui.settings.FaceEnrollmentActivity" />
+        <activity android:name="com.biolock.ui.settings.SecurityDetailsActivity"
+                  android:theme="@style/Theme.MaterialComponents.Light.DarkActionBar"/>
         <activity android:name="com.biolock.ui.attendance.ViewAttendanceActivity" />
+
+
     </application>
 
 </manifest>

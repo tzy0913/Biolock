@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.os.Handler;
 import android.text.InputFilter;
 import android.text.InputType;
 import android.text.Spannable;
@@ -57,6 +58,9 @@ public class DashboardActivity extends AppCompatActivity {
     private SessionManager sessionManager;
     private SimpleDateFormat timeFormat;
     private List<Attendance> attendanceList;
+    private static final int REFRESH_INTERVAL = 30000; // 30 seconds
+    private Handler refreshHandler;
+    private Runnable refreshRunnable;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,6 +69,7 @@ public class DashboardActivity extends AppCompatActivity {
 
         initializeViews();
         setupDashboard();
+        setupRefreshHandler();
     }
 
     private void initializeViews() {
@@ -311,8 +316,6 @@ public class DashboardActivity extends AppCompatActivity {
                 continue; // Skip unknown types
             }
 
-            endTime.add(Calendar.MINUTE, 30);  // 30 min buffer after class ends
-
             // If class is current or upcoming (hasn't ended yet including buffer)
             if (endTime.after(now)) {
                 return classObj;
@@ -541,9 +544,26 @@ public class DashboardActivity extends AppCompatActivity {
         });
     }
 
+    private void setupRefreshHandler() {
+        refreshHandler = new Handler();
+        refreshRunnable = () -> {
+            loadDashboardData(User.ROLE_INSTRUCTOR.equals(sessionManager.getUserRole()));
+            refreshHandler.postDelayed(refreshRunnable, REFRESH_INTERVAL);
+        };
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         loadDashboardData(User.ROLE_INSTRUCTOR.equals(sessionManager.getUserRole()));
+        // Start periodic refresh
+        refreshHandler.postDelayed(refreshRunnable, REFRESH_INTERVAL);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Stop refresh when activity is not visible
+        refreshHandler.removeCallbacks(refreshRunnable);
     }
 }

@@ -138,37 +138,43 @@
                 android:textStyle="bold"
                 android:layout_marginBottom="16dp"/>
 
-            <ScrollView
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="65dp"
+                android:background="#F5F5F5"
                 android:layout_marginBottom="16dp">
 
-                <LinearLayout
-                    android:id="@+id/securityStatusLayout"
+                <ScrollView
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="#F5F5F5"
-                    android:padding="12dp">
+                    android:layout_height="match_parent"
+                    android:fillViewport="true">
 
-                    <TextView
-                        android:id="@+id/textLastAssessment"
+                    <LinearLayout
+                        android:id="@+id/securityStatusLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="No recent assessment available"
-                        android:textSize="14sp"
-                        android:layout_marginBottom="8dp"/>
+                        android:orientation="vertical"
+                        android:padding="12dp">
 
-                    <TextView
-                        android:id="@+id/textSecurityStatus"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="Run a security check to view status"
-                        android:textSize="14sp"
-                        android:lineSpacingExtra="4dp"/>
+                        <TextView
+                            android:id="@+id/textLastAssessment"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="No recent assessment available"
+                            android:textSize="14sp"
+                            android:layout_marginBottom="8dp"/>
 
-                </LinearLayout>
-            </ScrollView>
+                        <TextView
+                            android:id="@+id/textSecurityStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Run a security check to view status"
+                            android:textSize="14sp"
+                            android:lineSpacingExtra="4dp"/>
+
+                    </LinearLayout>
+                </ScrollView>
+            </FrameLayout>
 
             <Button
                 android:id="@+id/buttonSecurityCheck"

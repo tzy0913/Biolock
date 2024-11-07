@@ -27,9 +27,30 @@ public class SecurityAssessment {
         public String mostCommonLoginTime;
         public String securityStatus;
         public List<String> securityWarnings;
+        public List<String> recommendations;
 
         public SecurityMetrics() {
             this.securityWarnings = new ArrayList<>();
+            this.recommendations = new ArrayList<>();
+        }
+
+        public int getStatusColor() {
+            switch (securityStatus) {
+                case "EXCELLENT":
+                    return android.R.color.holo_green_dark;
+                case "GOOD":
+                    return android.R.color.holo_green_light;
+                case "FAIR":
+                    return android.R.color.holo_orange_light;
+                case "ATTENTION NEEDED":
+                    return android.R.color.holo_red_light;
+                default:
+                    return android.R.color.darker_gray;
+            }
+        }
+
+        public boolean needsRecommendations() {
+            return "FAIR".equals(securityStatus) || "ATTENTION NEEDED".equals(securityStatus);
         }
     }
 
@@ -128,30 +149,37 @@ public class SecurityAssessment {
             riskFactors++;
             metrics.securityWarnings.add("Multiple devices detected (" +
                     metrics.uniqueDeviceCount + " devices)");
+            metrics.recommendations.add("Review and verify all devices used for login");
         }
 
         if (metrics.uniqueIPCount > 2) {
             riskFactors++;
             metrics.securityWarnings.add("Multiple IP addresses detected (" +
                     metrics.uniqueIPCount + " IPs)");
+            metrics.recommendations.add("Check login locations for suspicious activity");
         }
 
         if (metrics.suspiciousTimingCount > 2) {
             riskFactors++;
             metrics.securityWarnings.add(metrics.suspiciousTimingCount +
                     " login(s) during unusual hours (1 AM - 5 AM)");
+            metrics.recommendations.add("Review unusual login time patterns");
         }
 
         if (metrics.successRate < 60) {
             riskFactors++;
             metrics.securityWarnings.add("Low success rate: " +
                     String.format(Locale.US, "%.1f%%", metrics.successRate));
+            metrics.recommendations.add("Consider re-enrolling your face in better lighting");
+            metrics.recommendations.add("Ensure consistent lighting during authentication");
         }
 
         if (metrics.avgSimilarity < 0.85f) {
             riskFactors++;
             metrics.securityWarnings.add("Low average similarity score: " +
                     String.format(Locale.US, "%.2f", metrics.avgSimilarity));
+            metrics.recommendations.add("Re-enroll your face to improve recognition accuracy");
+            metrics.recommendations.add("Use consistent pose and expression when authenticating");
         }
 
         if (riskFactors == 0 && metrics.successRate >= 80 && metrics.avgSimilarity >= 0.85f) {
@@ -163,6 +191,21 @@ public class SecurityAssessment {
         } else {
             metrics.securityStatus = "ATTENTION NEEDED";
         }
+    }
+
+    public static String getRecommendations(SecurityMetrics metrics) {
+        if (!metrics.needsRecommendations()) {
+            return null;
+        }
+
+        StringBuilder recommendations = new StringBuilder();
+        recommendations.append("Recommended Actions:\n\n");
+
+        for (String recommendation : metrics.recommendations) {
+            recommendations.append("• ").append(recommendation).append("\n");
+        }
+
+        return recommendations.toString();
     }
 
     public static String formatSecurityReport(SecurityMetrics metrics) {

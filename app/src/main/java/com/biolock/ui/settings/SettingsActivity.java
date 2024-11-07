@@ -1,13 +1,18 @@
 package com.biolock.ui.settings;
 
+import android.animation.ValueAnimator;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.MenuItem;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -18,9 +23,14 @@ import com.biolock.repository.FaceAuthenticationRepository;
 import com.biolock.repository.Result;
 import com.biolock.model.SecuritySettings;
 import com.biolock.repository.UserRepository;
+import com.biolock.utils.SecurityAssessment;
 import com.biolock.utils.SessionManager;
+
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 public class SettingsActivity extends AppCompatActivity {
     private static final String TAG = "SettingsActivity";
@@ -37,6 +47,8 @@ public class SettingsActivity extends AppCompatActivity {
     private Button buttonSecurityCheck;
     private TextView textLastAssessment;
     private TextView textSecurityStatus;
+    private static final String DATE_FORMAT = "MMM dd, yyyy HH:mm";
+    private View securityStatusLayout;
 
     // Constants for spinners
     private static final int MAX_ALLOWED_ATTEMPTS = 5;
@@ -96,6 +108,7 @@ public class SettingsActivity extends AppCompatActivity {
         buttonSecurityCheck = findViewById(R.id.buttonSecurityCheck);
         textLastAssessment = findViewById(R.id.textLastAssessment);
         textSecurityStatus = findViewById(R.id.textSecurityStatus);
+        securityStatusLayout = findViewById(R.id.securityStatusLayout);
 
         disableButtons();
     }
@@ -169,9 +182,19 @@ public class SettingsActivity extends AppCompatActivity {
         buttonEnrollFace.setOnClickListener(v ->
                 startActivity(new Intent(this, FaceEnrollmentActivity.class)));
 
-        buttonSecurityCheck.setOnClickListener(v ->
-                Toast.makeText(this, "Security check feature coming soon",
-                        Toast.LENGTH_SHORT).show());
+        buttonSecurityCheck.setOnClickListener(v -> performSecurityAssessment());
+
+        // Add security status click handler
+        securityStatusLayout.setOnClickListener(v -> {
+            String currentStatus = textSecurityStatus.getText().toString();
+            if (!currentStatus.equals("Run a security check to view status")) {
+                startActivity(SecurityDetailsActivity.createIntent(
+                        this,
+                        currentStatus,
+                        textLastAssessment.getText().toString()
+                ));
+            }
+        });
 
         // Updated biometrics switch handler
         switchBiometrics.setOnCheckedChangeListener((buttonView, isChecked) -> {
@@ -261,6 +284,100 @@ public class SettingsActivity extends AppCompatActivity {
             }
         }
         return 0;
+    }
+
+    private void performSecurityAssessment() {
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setMessage("Performing security assessment...");
+        progress.setCancelable(false);
+        progress.show();
+
+        new Thread(() -> {
+            try {
+                Result<SecurityAssessment.SecurityMetrics> result =
+                        faceAuthenticationRepository.runSecurityAssessment(sessionManager.getUserId());
+
+                runOnUiThread(() -> {
+                    if (result.isSuccess()) {
+                        SecurityAssessment.SecurityMetrics metrics = result.getData();
+                        updateSecurityStatus(metrics);
+                        if (securityStatusLayout != null) {
+                            securityStatusLayout.setBackgroundColor(getResources().getColor(
+                                    android.R.color.background_light));
+                        }
+                    } else {
+                        Toast.makeText(this, "Error performing assessment: " +
+                                result.getError(), Toast.LENGTH_LONG).show();
+                        textLastAssessment.setText("Assessment failed");
+                        textSecurityStatus.setText("Unable to determine security status");
+                        if (securityStatusLayout != null) {
+                            securityStatusLayout.setBackgroundColor(getResources().getColor(
+                                    android.R.color.darker_gray));
+                        }
+                    }
+                    progress.dismiss();
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    Toast.makeText(this, "Error performing security assessment: " +
+                            e.getMessage(), Toast.LENGTH_LONG).show();
+                    textLastAssessment.setText("Assessment failed");
+                    textSecurityStatus.setText("Unable to determine security status");
+                });
+            }
+        }).start();
+    }
+
+    private void updateSecurityStatus(SecurityAssessment.SecurityMetrics metrics) {
+        // Format current timestamp
+        SimpleDateFormat sdf = new SimpleDateFormat(DATE_FORMAT, Locale.getDefault());
+        String timestamp = sdf.format(new Date());
+        textLastAssessment.setText("Last assessed: " + timestamp);
+
+        // Build complete status text
+        StringBuilder statusText = new StringBuilder();
+
+        // Overall Status Section
+        statusText.append(metrics.securityStatus).append("\n\n");
+
+        if (metrics.totalLoginAttempts > 0) {
+            // Success Rate Section
+            statusText.append(String.format(Locale.US, "Login Success Rate: %.1f%%\n", metrics.successRate));
+            if (metrics.successRate > 0) {
+                statusText.append(String.format(Locale.US, "Average Match Score: %.2f\n", metrics.avgSimilarity));
+                statusText.append(String.format(Locale.US, "High Quality Matches: %.1f%%\n", metrics.highQualityRate));
+            }
+            statusText.append("\n");
+
+            // Login Patterns Section
+            statusText.append("Login Patterns (Last 30 days):\n");
+            if (metrics.mostCommonLoginTime != null) {
+                statusText.append("• Most frequent login time: ")
+                        .append(metrics.mostCommonLoginTime)
+                        .append("\n");
+            }
+        }
+
+        // Warnings Section
+        if (!metrics.securityWarnings.isEmpty()) {
+            statusText.append("\nWarnings:\n");
+            for (String warning : metrics.securityWarnings) {
+                statusText.append("• ").append(warning).append("\n");
+            }
+        }
+
+        // Recommendations Section
+        if (!metrics.recommendations.isEmpty()) {
+            statusText.append("\nRecommendations:\n");
+            for (String recommendation : metrics.recommendations) {
+                statusText.append("• ").append(recommendation).append("\n");
+            }
+        }
+
+        // Set the text and color
+        textSecurityStatus.setText(statusText.toString());
+        textSecurityStatus.setTextColor(getResources().getColor(metrics.getStatusColor()));
     }
 
     @Override
