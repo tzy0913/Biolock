@@ -89,7 +89,7 @@ public class UserDao {
 
         try {
             String sql = "INSERT INTO users (name, email, role, password, created_at) " +
-                    "VALUES (?, ?, ?, PASSWORD(?), NOW())";
+                    "VALUES (?, ?, ?, SHA2(?, 256), NOW())";  // Changed PASSWORD() to SHA2(?, 256)
 
             conn = DatabaseHelper.getInstance().getConnection();
             stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
@@ -159,7 +159,7 @@ public class UserDao {
 
         try {
             String sql = "SELECT COUNT(*) FROM users " +
-                    "WHERE email = ? AND password = PASSWORD(?)";
+                    "WHERE email = ? AND password = SHA2(?, 256)";  // Changed PASSWORD() to SHA2(?, 256)
 
             conn = DatabaseHelper.getInstance().getConnection();
             stmt = conn.prepareStatement(sql);

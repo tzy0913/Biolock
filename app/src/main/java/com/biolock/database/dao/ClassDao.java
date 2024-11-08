@@ -134,9 +134,9 @@ public class ClassDao {
         try {
             String sql =
                     "SELECT c.*, s.session_id, s.date, s.start_time, s.end_time, " +
-                            "a.attendance_id, a.timestamp, a.status, " +
+                            "a.attendance_id, a.timestamp, a.status, " + "s.validation_code, " +
                             "CASE " +
-                            "   WHEN a.status IS NOT NULL THEN a.status " +
+                            "   WHEN a.status IS NOT NULL THEN UPPER(a.status) " +
                             "   WHEN NOW() < CONCAT(s.date, ' ', s.start_time) THEN 'UPCOMING' " +
                             "   WHEN NOW() BETWEEN CONCAT(s.date, ' ', s.start_time) AND DATE_ADD(CONCAT(s.date, ' ', s.end_time), INTERVAL 30 MINUTE) THEN 'ONGOING' " +
                             "   ELSE 'ABSENT' " +
