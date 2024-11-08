@@ -1,27 +1,32 @@
+/**
+ * Utility class for preprocessing camera images for face detection.
+ * Handles image format conversion, face extraction, and confidence calculation.
+ * Supports various image formats including YUV and single-plane formats.
+ */
 package com.biolock.utils;
 
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.ImageFormat;
-import android.graphics.Matrix;
-import android.graphics.Rect;
-import android.graphics.YuvImage;
-import com.google.mlkit.vision.face.Face;
+import android.graphics.*;
 import android.media.Image;
 import android.util.Log;
-
+import com.google.mlkit.vision.face.Face;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 
-/**
- * Handles camera image preprocessing for face detection.
- * Only concerned with image format conversion and face extraction.
- */
 public class FacePreprocessor {
     private static final String TAG = "FacePreprocessor";
 
+    // ============================
+    // Face Extraction Operations
+    // ============================
+
     /**
-     * Extracts face region from camera image
+     * Extracts and preprocesses face region from camera image
+     * Includes rotation, padding, and scaling to standard size
+     *
+     * @param image Source camera image
+     * @param boundingBox Face bounding box from detector
+     * @param rotation Required rotation in degrees
+     * @return Processed face bitmap (112x112) or null if extraction fails
      */
     public static Bitmap extractFace(Image image, Rect boundingBox, int rotation) {
         try {
@@ -30,13 +35,14 @@ public class FacePreprocessor {
                     image.getWidth(), image.getHeight(), image.getFormat(), rotation));
             Log.d(TAG, "Bounding box: " + boundingBox.toString());
 
+            // Convert full image to bitmap
             Bitmap fullBitmap = imageToBitmap(image);
             if (fullBitmap == null) {
                 Log.e(TAG, "Failed to create bitmap from image");
                 return null;
             }
 
-            // Rotate if needed
+            // Apply rotation if needed
             if (rotation != 0) {
                 Matrix matrix = new Matrix();
                 matrix.postRotate(rotation);
@@ -44,10 +50,8 @@ public class FacePreprocessor {
                         fullBitmap.getWidth(), fullBitmap.getHeight(), matrix, true);
             }
 
-            // Add padding around face
+            // Calculate padding and crop dimensions
             int padding = Math.min(boundingBox.width(), boundingBox.height()) / 4;
-
-            // Calculate crop dimensions
             int left = Math.max(0, boundingBox.left - padding);
             int top = Math.max(0, boundingBox.top - padding);
             int width = Math.min(fullBitmap.getWidth() - left, boundingBox.width() + 2 * padding);
@@ -58,12 +62,10 @@ public class FacePreprocessor {
                 return null;
             }
 
-            // Crop face region
+            // Extract and scale face region
             Log.d(TAG, String.format("Extracting face region: %d,%d - %dx%d",
                     left, top, width, height));
             Bitmap faceBitmap = Bitmap.createBitmap(fullBitmap, left, top, width, height);
-
-            // Scale the cropped face region to 112x112
             return Bitmap.createScaledBitmap(faceBitmap, 112, 112, true);
 
         } catch (Exception e) {
@@ -72,8 +74,12 @@ public class FacePreprocessor {
         }
     }
 
+    // ============================
+    // Image Format Conversion
+    // ============================
+
     /**
-     * Converts camera Image to Bitmap
+     * Converts camera Image to Bitmap, handling different formats
      */
     private static Bitmap imageToBitmap(Image image) {
         try {
@@ -98,20 +104,20 @@ public class FacePreprocessor {
     }
 
     /**
-     * Handles single plane image (JPEG/RGBA)
+     * Processes single-plane images (JPEG/RGBA format)
      */
     private static Bitmap handleSinglePlaneImage(Image.Plane plane, int width, int height) {
         ByteBuffer buffer = plane.getBuffer();
         byte[] bytes = new byte[buffer.remaining()];
         buffer.get(bytes);
 
-        // Try direct decoding first
+        // Try direct JPEG decoding
         Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
         if (bitmap != null) {
             return bitmap;
         }
 
-        // If direct decoding fails, handle RGBA data
+        // Handle RGBA data if JPEG decoding fails
         int[] colors = new int[width * height];
         int pixelStride = plane.getPixelStride();
         int rowStride = plane.getRowStride();
@@ -141,14 +147,14 @@ public class FacePreprocessor {
     }
 
     /**
-     * Handles YUV format image
+     * Processes YUV format images
      */
     private static Bitmap handleYuvImage(Image image, Image.Plane[] planes, int width, int height) {
         ByteBuffer yBuffer = planes[0].getBuffer();
         ByteBuffer uBuffer = planes[1].getBuffer();
         ByteBuffer vBuffer = planes[2].getBuffer();
 
-        // Calculate buffer sizes
+        // Calculate and allocate buffers
         int ySize = yBuffer.remaining();
         int totalSize = width * height * 3 / 2;
         byte[] nv21 = new byte[totalSize];
@@ -156,13 +162,13 @@ public class FacePreprocessor {
         // Copy Y plane
         yBuffer.get(nv21, 0, ySize);
 
-        // Copy U and V planes
+        // Process UV planes
         byte[] uBytes = new byte[uBuffer.remaining()];
         byte[] vBytes = new byte[vBuffer.remaining()];
         uBuffer.get(uBytes);
         vBuffer.get(vBytes);
 
-        // Interleave U and V planes
+        // Interleave U and V data
         int uvPos = ySize;
         int uvSize = totalSize - ySize;
         for (int i = 0; i < uvSize / 2; i++) {
@@ -170,32 +176,41 @@ public class FacePreprocessor {
             nv21[uvPos++] = uBytes[i];
         }
 
-        // Convert to JPEG
+        // Convert to JPEG then Bitmap
         YuvImage yuvImage = new YuvImage(nv21, ImageFormat.NV21, width, height, null);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         yuvImage.compressToJpeg(new Rect(0, 0, width, height), 100, out);
 
-        // Convert to Bitmap
         byte[] imageBytes = out.toByteArray();
         return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
     }
 
+    // ============================
+    // Confidence Calculation
+    // ============================
+
+    /**
+     * Calculates confidence score for detected face based on pose
+     * Considers head angle and rotation
+     *
+     * @param face Detected face from MLKit
+     * @return Confidence score between 0 and 1
+     */
     public static double calculateFaceConfidence(Face face) {
         double baseConfidence = 0.4;  // Base confidence value
         double angleWeight = 0.3;     // Weight for head angle
         double rotationWeight = 0.3;  // Weight for head rotation
         double maxAngle = 45.0;       // Maximum acceptable angle
 
-        // Get face angles using MLKit's Face methods
+        // Calculate angle-based confidence
         double angleConfidence = 1.0 - (Math.abs(face.getHeadEulerAngleY()) / maxAngle);
         double rotationConfidence = 1.0 - (Math.abs(face.getHeadEulerAngleZ()) / maxAngle);
 
-        // Calculate weighted confidence
+        // Compute weighted score
         double confidence = baseConfidence +
                 (angleConfidence * angleWeight) +
                 (rotationConfidence * rotationWeight);
 
-        // Cap at 1.0
         return Math.min(confidence, 1.0);
     }
 }

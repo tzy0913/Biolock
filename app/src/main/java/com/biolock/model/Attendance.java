@@ -1,32 +1,67 @@
+/**
+ * Model class representing an attendance record.
+ * Includes core attendance data, session information, and student details.
+ * Used for tracking and displaying class attendance records.
+ */
 package com.biolock.model;
 
 import java.sql.*;
 import java.sql.Time;
 
 public class Attendance {
-    // Core attendance data
+    /**
+     * Status options for attendance:
+     * - pending: Initial state when attendance is marked
+     * - present: Student attended within time
+     * - late: Student attended after start time
+     * - absent: Student did not attend
+     */
+
+    // ============================
+    // Core Attendance Fields
+    // ============================
     private Long attendanceId;
     private Long userId;
     private Long sessionId;
     private Time timestamp;
     private String status;  // pending/present/late/absent
 
-    // Display data (from joined tables)
+    // ============================
+    // Session Details
+    // ============================
     private Date sessionDate;
     private Time startTime;
     private Time endTime;
+    private String validationCode;
+
+    // ============================
+    // Course Information
+    // ============================
     private String moduleCode;
     private String moduleName;
     private String section;
     private String room;
-    private String validationCode;
 
-    // User details for instructor view
+    // ============================
+    // Student Information
+    // ============================
     private String studentName;
     private String studentEmail;
 
+    // ============================
+    // Constructors
+    // ============================
+
+    /**
+     * Default constructor
+     */
     public Attendance() {}
 
+    /**
+     * Constructor for creating a new attendance record
+     * @param userId ID of the student
+     * @param sessionId ID of the class session
+     */
     public Attendance(Long userId, Long sessionId) {
         this.userId = userId;
         this.sessionId = sessionId;
@@ -34,7 +69,10 @@ public class Attendance {
         this.status = "pending";
     }
 
-    // Core data getters and setters
+    // ============================
+    // Core Attendance Getters/Setters
+    // ============================
+
     public Long getAttendanceId() {
         return attendanceId;
     }
@@ -75,7 +113,10 @@ public class Attendance {
         this.status = status;
     }
 
-    // Display data getters and setters
+    // ============================
+    // Session Details Getters/Setters
+    // ============================
+
     public Date getSessionDate() {
         return sessionDate;
     }
@@ -99,6 +140,18 @@ public class Attendance {
     public void setEndTime(Time endTime) {
         this.endTime = endTime;
     }
+
+    public String getValidationCode() {
+        return validationCode;
+    }
+
+    public void setValidationCode(String validationCode) {
+        this.validationCode = validationCode;
+    }
+
+    // ============================
+    // Course Information Getters/Setters
+    // ============================
 
     public String getModuleCode() {
         return moduleCode;
@@ -132,7 +185,10 @@ public class Attendance {
         this.room = room;
     }
 
-    // User details getters and setters
+    // ============================
+    // Student Information Getters/Setters
+    // ============================
+
     public String getStudentName() {
         return studentName;
     }
@@ -147,13 +203,5 @@ public class Attendance {
 
     public void setStudentEmail(String studentEmail) {
         this.studentEmail = studentEmail;
-    }
-
-    public String getValidationCode() {
-        return validationCode;
-    }
-
-    public void setValidationCode(String validationCode) {
-        this.validationCode = validationCode;
     }
 }

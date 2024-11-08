@@ -1,3 +1,7 @@
+/**
+ * DatabaseHelper manages database connections through an SSH tunnel with connection pooling.
+ * Implements singleton pattern and provides thread-safe database operations.
+ */
 package com.biolock.database;
 
 import android.util.Log;
@@ -46,6 +50,7 @@ public class DatabaseHelper {
     private Session sshSession;
     private String jdbcUrl;
 
+    // Inner class for managing pooled connections
     private static class PooledConnection {
         Connection connection;
         long lastValidated;
@@ -74,6 +79,7 @@ public class DatabaseHelper {
         }
     }
 
+    // Singleton and initialization methods
     private DatabaseHelper() {
         connectionPool = new ArrayBlockingQueue<>(MAX_POOL_SIZE);
         initializeConnectionProperties();
@@ -102,6 +108,7 @@ public class DatabaseHelper {
         connectionProps.setProperty("tcpKeepAlive", "true");
     }
 
+    // SSH and Database initialization methods
     public void initialize() throws SQLException {
         if (isInitialized.get()) {
             return;
@@ -149,6 +156,7 @@ public class DatabaseHelper {
         Log.i(TAG, "SSH tunnel established successfully");
     }
 
+    // Connection management methods
     private Connection createConnection() throws SQLException {
         try {
             Class.forName("com.mysql.jdbc.Driver");
@@ -174,6 +182,7 @@ public class DatabaseHelper {
         Log.i(TAG, "Connection pool initialized with " + connectionPool.size() + " connections");
     }
 
+    // Public connection handling methods
     public Connection getConnection() throws SQLException {
         if (!isInitialized.get()) {
             initialize();
@@ -207,7 +216,7 @@ public class DatabaseHelper {
                 return pooledConn.connection;
 
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt(); // Restore interrupted status
+                Thread.currentThread().interrupt();
                 throw new SQLException("Interrupted while waiting for connection", e);
             } catch (SQLException e) {
                 lastException = e;
@@ -248,6 +257,7 @@ public class DatabaseHelper {
         }
     }
 
+    // Cleanup and status methods
     public synchronized void cleanup() {
         Log.d(TAG, "Cleaning up database resources...");
 

@@ -1,3 +1,7 @@
+/**
+ * Data Access Object for handling attendance-related database operations.
+ * Provides methods for marking attendance and retrieving attendance records.
+ */
 package com.biolock.database.dao;
 
 import android.util.Log;
@@ -10,7 +14,12 @@ import java.util.List;
 public class AttendanceDao {
     private static final String TAG = "AttendanceDao";
 
-    // For marking attendance
+    /**
+     * Records attendance for a user in a specific session
+     * @param userId ID of the user marking attendance
+     * @param sessionId ID of the session for which attendance is being marked
+     * @throws SQLException if database operation fails
+     */
     public void markAttendance(Long userId, Long sessionId) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
@@ -29,14 +38,19 @@ public class AttendanceDao {
         }
     }
 
-    // Get attendance for a specific session
+    /**
+     * Retrieves attendance records for a specific session
+     * Includes all assigned students, marking absent students as "NOT MARKED"
+     * @param sessionId ID of the session to retrieve attendance for
+     * @return List of Attendance objects containing attendance records
+     * @throws SQLException if database operation fails
+     */
     public List<Attendance> getSessionAttendance(Long sessionId) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
         ResultSet rs = null;
 
         try {
-            // Modified query to show all assigned students
             String sql =
                     "SELECT u.name as student_name, u.email as student_email, " +
                             "a.attendance_id, a.user_id, a.session_id, a.timestamp, a.status " +
@@ -74,26 +88,45 @@ public class AttendanceDao {
         }
     }
 
+    /**
+     * Maps a database result set to an Attendance object
+     * @param rs ResultSet containing attendance data
+     * @return Populated Attendance object
+     * @throws SQLException if mapping fails
+     */
     private Attendance mapResultSetToAttendance(ResultSet rs) throws SQLException {
         Attendance attendance = new Attendance();
+
+        // Basic attendance info
         attendance.setAttendanceId(rs.getLong("attendance_id"));
         attendance.setUserId(rs.getLong("user_id"));
         attendance.setSessionId(rs.getLong("session_id"));
         attendance.setTimestamp(rs.getTime("timestamp"));
         attendance.setStatus(rs.getString("status"));
 
+        // Session details
         attendance.setSessionDate(rs.getDate("date"));
         attendance.setStartTime(rs.getTime("start_time"));
         attendance.setEndTime(rs.getTime("end_time"));
+
+        // Module info
         attendance.setModuleCode(rs.getString("module_code"));
         attendance.setModuleName(rs.getString("module_name"));
         attendance.setSection(rs.getString("section"));
         attendance.setRoom(rs.getString("room"));
+
+        // Student info
         attendance.setStudentName(rs.getString("student_name"));
 
         return attendance;
     }
 
+    /**
+     * Safely closes database resources
+     * @param conn Database connection to close
+     * @param stmt SQL statement to close
+     * @param rs ResultSet to close
+     */
     private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
         if (rs != null) {
             try { rs.close(); } catch (SQLException e) {

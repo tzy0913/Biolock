@@ -1,10 +1,13 @@
+/**
+ * Data Access Object for managing user security settings.
+ * Handles CRUD operations for user-specific security configurations such as
+ * failed login attempts and lockout durations.
+ */
 package com.biolock.database.dao;
 
 import android.util.Log;
-
 import com.biolock.database.DatabaseHelper;
 import com.biolock.model.SecuritySettings;
-
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,6 +15,15 @@ import java.util.List;
 public class SecuritySettingsDao {
     private static final String TAG = "SecuritySettingsDao";
 
+    // ============================
+    // Read Operations
+    // ============================
+
+    /**
+     * Retrieves security settings for a specific user
+     * @param userId ID of the user
+     * @return SecuritySettings object if found, null otherwise
+     */
     public SecuritySettings getSettings(Long userId) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
@@ -34,6 +46,14 @@ public class SecuritySettingsDao {
         }
     }
 
+    // ============================
+    // Write Operations
+    // ============================
+
+    /**
+     * Creates new security settings for a user
+     * @param settings SecuritySettings object containing user's security configuration
+     */
     public void save(SecuritySettings settings) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
@@ -55,6 +75,10 @@ public class SecuritySettingsDao {
         }
     }
 
+    /**
+     * Updates existing security settings for a user
+     * @param settings SecuritySettings object containing updated configuration
+     */
     public void updateSettings(SecuritySettings settings) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
@@ -77,15 +101,34 @@ public class SecuritySettingsDao {
         }
     }
 
+    // ============================
+    // Helper Methods
+    // ============================
+
+    /**
+     * Maps a database result set row to a SecuritySettings object
+     * @param rs ResultSet containing security settings data
+     * @return Populated SecuritySettings object
+     */
     private SecuritySettings mapResultSetToSecuritySettings(ResultSet rs) throws SQLException {
         SecuritySettings settings = new SecuritySettings();
+
+        // User identifier
         settings.setUserId(rs.getLong("user_id"));
+
+        // Security parameters
         settings.setMaxFailedAttempts(rs.getInt("max_failed_attempts"));
         settings.setLockoutDurationMins(rs.getInt("lockout_duration_mins"));
+
+        // Metadata
         settings.setLastUpdated(rs.getTimestamp("last_updated"));
+
         return settings;
     }
 
+    /**
+     * Safely closes database resources
+     */
     private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
         if (rs != null) {
             try {

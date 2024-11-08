@@ -1,3 +1,8 @@
+/**
+ * Repository class handling attendance-related business logic.
+ * Provides methods for retrieving and managing attendance records across different time periods.
+ * Supports both instructor and student views.
+ */
 package com.biolock.repository;
 
 import android.util.Log;
@@ -8,7 +13,6 @@ import com.biolock.model.CourseClass;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 
 public class AttendanceRepository {
@@ -16,17 +20,24 @@ public class AttendanceRepository {
     private final AttendanceDao attendanceDao;
     private final ClassDao classDao;
 
+    // ============================
+    // Constructor
+    // ============================
+
     public AttendanceRepository() {
         this.attendanceDao = new AttendanceDao();
         this.classDao = new ClassDao();
     }
 
-    // Helper method to convert LocalDate to SQL Date
-    private Date toSqlDate(LocalDate date) {
-        return new Date(date.atStartOfDay(ZoneId.systemDefault())
-                .toInstant().toEpochMilli());
-    }
+    // ============================
+    // Session-based Operations
+    // ============================
 
+    /**
+     * Retrieves attendance records for a specific session
+     * @param sessionId ID of the session
+     * @return Result containing list of attendance records or error
+     */
     public Result<List<Attendance>> getCurrentSessionAttendance(Long sessionId) {
         try {
             List<Attendance> attendances = attendanceDao.getSessionAttendance(sessionId);
@@ -37,7 +48,16 @@ public class AttendanceRepository {
         }
     }
 
-    // For Today tab - Using date range with same start/end date
+    // ============================
+    // Time-based View Operations
+    // ============================
+
+    /**
+     * Retrieves attendance/class records for the current day
+     * @param id User ID (student or instructor)
+     * @param isInstructor true if user is instructor, false if student
+     * @return Result containing list of relevant records
+     */
     public Result<List<?>> getTodayAttendance(Long id, boolean isInstructor) {
         try {
             LocalDate today = LocalDate.now();
@@ -56,9 +76,16 @@ public class AttendanceRepository {
         }
     }
 
-    // For Week tab
+    /**
+     * Retrieves attendance/class records for a specified week
+     * @param id User ID
+     * @param isInstructor User role flag
+     * @param startDate Week start date
+     * @param endDate Week end date
+     * @return Result containing list of relevant records
+     */
     public Result<List<?>> getWeekAttendance(Long id, boolean isInstructor,
-                                                     LocalDate startDate, LocalDate endDate) {
+                                             LocalDate startDate, LocalDate endDate) {
         try {
             Date sqlStartDate = toSqlDate(startDate);
             Date sqlEndDate = toSqlDate(endDate);
@@ -82,7 +109,12 @@ public class AttendanceRepository {
         }
     }
 
-    // For Month tab
+    /**
+     * Retrieves attendance/class records for the current month
+     * @param id User ID
+     * @param isInstructor User role flag
+     * @return Result containing list of relevant records
+     */
     public Result<List<?>> getMonthAttendance(Long id, boolean isInstructor) {
         try {
             LocalDate now = LocalDate.now();
@@ -105,17 +137,21 @@ public class AttendanceRepository {
         }
     }
 
-    // For specific date (used in month view when selecting a date)
+    /**
+     * Retrieves attendance/class records for a specific date
+     * @param id User ID
+     * @param isInstructor User role flag
+     * @param selectedDate Date to retrieve records for
+     * @return Result containing list of relevant records
+     */
     public Result<List<?>> getDateAttendance(Long id, boolean isInstructor, LocalDate selectedDate) {
         try {
             Date sqlDate = toSqlDate(selectedDate);
 
             if (isInstructor) {
-                // For instructor, pass same date as start and end
                 List<CourseClass> classes = classDao.findClassesByInstructor(id, sqlDate, sqlDate);
                 return Result.success(classes);
             } else {
-                // For student, use the single date method
                 List<Attendance> attendances = classDao.findClassesByStudentForDate(id, sqlDate);
                 return Result.success(attendances);
             }
@@ -125,7 +161,16 @@ public class AttendanceRepository {
         }
     }
 
-    // For marking attendance
+    // ============================
+    // Attendance Management
+    // ============================
+
+    /**
+     * Records attendance for a user in a session
+     * @param userId ID of the user marking attendance
+     * @param sessionId ID of the session
+     * @return Result indicating success or failure
+     */
     public Result<Void> markAttendance(Long userId, Long sessionId) {
         try {
             attendanceDao.markAttendance(userId, sessionId);
@@ -134,5 +179,19 @@ public class AttendanceRepository {
             Log.e(TAG, "Error marking attendance", e);
             return Result.error("Failed to mark attendance: " + e.getMessage());
         }
+    }
+
+    // ============================
+    // Helper Methods
+    // ============================
+
+    /**
+     * Converts LocalDate to SQL Date
+     * @param date LocalDate to convert
+     * @return Equivalent SQL Date
+     */
+    private Date toSqlDate(LocalDate date) {
+        return new Date(date.atStartOfDay(ZoneId.systemDefault())
+                .toInstant().toEpochMilli());
     }
 }

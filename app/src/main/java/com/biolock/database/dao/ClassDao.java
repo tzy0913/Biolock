@@ -1,3 +1,7 @@
+/**
+ * Data Access Object for handling class-related database operations.
+ * Provides methods for retrieving class information for both instructors and students.
+ */
 package com.biolock.database.dao;
 
 import android.util.Log;
@@ -11,7 +15,14 @@ import java.util.List;
 public class ClassDao {
     private static final String TAG = "ClassDao";
 
-    // For instructors - get today's/period classes
+    // ============================
+    // Instructor-related methods
+    // ============================
+
+    /**
+     * Retrieves classes for an instructor within a specified date range
+     * Includes class status (UPCOMING, ONGOING, COMPLETED)
+     */
     public List<CourseClass> findClassesByInstructor(Long instructorId, Date startDate, Date endDate) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
@@ -36,8 +47,8 @@ public class ClassDao {
             stmt.setDate(3, endDate);
 
             // Log the query parameters
-            Log.d("ClassDao", "SQL: " + sql);
-            Log.d("ClassDao", String.format("instructorId: %d, startDate: %s, endDate: %s",
+            Log.d(TAG, "SQL: " + sql);
+            Log.d(TAG, String.format("instructorId: %d, startDate: %s, endDate: %s",
                     instructorId, startDate, endDate));
 
             rs = stmt.executeQuery();
@@ -47,7 +58,7 @@ public class ClassDao {
                 CourseClass classObj = mapResultSetToClass(rs);
                 classes.add(classObj);
 
-                Log.d("ClassDao", String.format("Found class: ID=%d, Module=%s, Session=%d, Date=%s, Status=%s, Code=%s",
+                Log.d(TAG, String.format("Found class: ID=%d, Module=%s, Session=%d, Date=%s, Status=%s, Code=%s",
                         classObj.getClassId(),
                         classObj.getModuleCode(),
                         classObj.getSessionId(),
@@ -56,14 +67,20 @@ public class ClassDao {
                         classObj.getValidationCode()));
             }
 
-            Log.d("ClassDao", "Total classes found: " + classes.size());
+            Log.d(TAG, "Total classes found: " + classes.size());
             return classes;
         } finally {
             closeResources(conn, stmt, rs);
         }
     }
 
-    // For students - get classes with attendance status if exists
+    // ============================
+    // Student-related methods
+    // ============================
+
+    /**
+     * Retrieves classes and attendance status for a student within a date range
+     */
     public List<Attendance> findClassesByStudent(Long studentId, Date startDate, Date endDate) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
@@ -74,7 +91,7 @@ public class ClassDao {
                     "SELECT c.*, s.session_id, s.date, s.start_time, s.end_time, s.validation_code, " +
                             "a.attendance_id, a.timestamp, a.status, " +
                             "CASE " +
-                            "   WHEN a.status IS NOT NULL THEN UPPER(a.status) " + // Convert existing status to uppercase
+                            "   WHEN a.status IS NOT NULL THEN UPPER(a.status) " +
                             "   WHEN NOW() < CONCAT(s.date, ' ', s.start_time) THEN 'UPCOMING' " +
                             "   WHEN NOW() BETWEEN CONCAT(s.date, ' ', s.start_time) AND DATE_ADD(CONCAT(s.date, ' ', s.end_time), INTERVAL 30 MINUTE) THEN 'ONGOING' " +
                             "   ELSE 'ABSENT' " +
@@ -97,7 +114,7 @@ public class ClassDao {
             List<Attendance> attendances = new ArrayList<>();
             while (rs.next()) {
                 Attendance attendance = mapResultSetToAttendance(rs, studentId);
-                attendance.setStatus(rs.getString("calculated_status")); // Use the calculated status
+                attendance.setStatus(rs.getString("calculated_status"));
                 attendances.add(attendance);
             }
             return attendances;
@@ -106,6 +123,9 @@ public class ClassDao {
         }
     }
 
+    /**
+     * Retrieves classes and attendance status for a student on a specific date
+     */
     public List<Attendance> findClassesByStudentForDate(Long studentId, Date date) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
@@ -147,7 +167,9 @@ public class ClassDao {
         }
     }
 
-    // For date ranges (used by week view)
+    /**
+     * Retrieves classes for week view with attendance status
+     */
     public List<Attendance> findClassesByStudentRange(Long studentId, Date startDate, Date endDate) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
@@ -187,7 +209,13 @@ public class ClassDao {
         }
     }
 
-    // Get single class by ID
+    // ============================
+    // General class methods
+    // ============================
+
+    /**
+     * Retrieves a single class by its ID
+     */
     public CourseClass findClassById(Long classId) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
@@ -210,9 +238,17 @@ public class ClassDao {
         }
     }
 
+    // ============================
+    // Helper methods
+    // ============================
+
+    /**
+     * Maps a ResultSet row to a CourseClass object
+     */
     private CourseClass mapResultSetToClass(ResultSet rs) throws SQLException {
         CourseClass classObj = new CourseClass();
         try {
+            // Basic class info
             classObj.setClassId(rs.getLong("class_id"));
             classObj.setModuleCode(rs.getString("module_code"));
             classObj.setModuleName(rs.getString("module_name"));
@@ -221,12 +257,14 @@ public class ClassDao {
             classObj.setRoom(rs.getString("room"));
             classObj.setInstructorId(rs.getLong("instructor_id"));
 
+            // Session info
             classObj.setSessionId(rs.getLong("session_id"));
             classObj.setSessionDate(rs.getDate("date"));
             classObj.setStartTime(rs.getTime("start_time"));
             classObj.setEndTime(rs.getTime("end_time"));
             classObj.setStatus(rs.getString("class_status"));
             classObj.setValidationCode(rs.getString("validation_code"));
+
             return classObj;
         } catch (SQLException e) {
             Log.e(TAG, "Error mapping result set to class", e);
@@ -234,13 +272,18 @@ public class ClassDao {
         }
     }
 
+    /**
+     * Maps a ResultSet row to an Attendance object
+     */
     private Attendance mapResultSetToAttendance(ResultSet rs, Long studentId) throws SQLException {
         Attendance attendance = new Attendance();
+
+        // Attendance info
         attendance.setAttendanceId(rs.getLong("attendance_id"));
         attendance.setUserId(studentId);
         attendance.setSessionId(rs.getLong("session_id"));
         attendance.setTimestamp(rs.getTime("timestamp"));
-        attendance.setStatus(rs.getString("calculated_status")); // Use calculated status
+        attendance.setStatus(rs.getString("calculated_status"));
 
         // Session/class details
         attendance.setSessionDate(rs.getDate("date"));
@@ -255,6 +298,9 @@ public class ClassDao {
         return attendance;
     }
 
+    /**
+     * Safely closes database resources
+     */
     private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
         if (rs != null) {
             try { rs.close(); } catch (SQLException e) { Log.e(TAG, "Error closing ResultSet", e); }

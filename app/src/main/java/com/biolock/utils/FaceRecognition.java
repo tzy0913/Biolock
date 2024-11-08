@@ -1,3 +1,8 @@
+/**
+ * Core face recognition implementation using TensorFlow Lite.
+ * Handles face embedding generation, comparison, and conversion operations.
+ * Uses MobileFaceNet model for generating face embeddings.
+ */
 package com.biolock.utils;
 
 import android.content.Context;
@@ -17,16 +22,29 @@ import java.nio.MappedByteBuffer;
 
 public class FaceRecognition {
     private static final String TAG = "FaceRecognition";
+
+    // ============================
+    // Model Configuration
+    // ============================
     private static final String MODEL_PATH = "mobile_face_net.tflite";
     private static final int INPUT_SIZE = 112;
     private static final float IMAGE_MEAN = 127.5f;
     private static final float IMAGE_STD = 128.0f;
     private static final int EMBEDDING_SIZE = 192;
+    private static final float SIMILARITY_THRESHOLD = 0.80f;
 
+    // ============================
+    // TensorFlow Components
+    // ============================
     private final Interpreter interpreter;
     private final ImageProcessor imageProcessor;
     private final TensorImage inputImageBuffer;
     private final float[][] embeddingBuffer;
+    private float lastSimilarityScore;
+
+    // ============================
+    // Initialization
+    // ============================
 
     public FaceRecognition(Context context) throws IOException {
         MappedByteBuffer modelBuffer = FileUtil.loadMappedFile(context, MODEL_PATH);
@@ -42,8 +60,11 @@ public class FaceRecognition {
         embeddingBuffer = new float[1][EMBEDDING_SIZE];
     }
 
+    // ============================
+    // Core Recognition Methods
+    // ============================
+
     public float[] generateEmbedding(Bitmap face) {
-        // Add this scaling before processing
         Bitmap scaledFace = Bitmap.createScaledBitmap(face, INPUT_SIZE, INPUT_SIZE, true);
         inputImageBuffer.load(scaledFace);
         TensorImage processedImage = imageProcessor.process(inputImageBuffer);
@@ -51,20 +72,47 @@ public class FaceRecognition {
         return embeddingBuffer[0];
     }
 
-    private float[] l2Normalize(float[] embedding) {
-        float squareSum = 0.0f;
-        for (float val : embedding) {
-            squareSum += val * val;
+    public boolean matchFace(float[] storedEmbedding, float[] newEmbedding) {
+        if (newEmbedding == null || storedEmbedding == null) {
+            Log.e(TAG, "One or both embeddings are null");
+            return false;
         }
 
-        float l2Norm = (float) Math.sqrt(squareSum);
-        if (l2Norm > 0) {
-            for (int i = 0; i < embedding.length; i++) {
-                embedding[i] /= l2Norm;
-            }
-        }
-        return embedding;
+        lastSimilarityScore = calculateSimilarity(newEmbedding, storedEmbedding);
+        Log.d(TAG, "Similarity Score: " + lastSimilarityScore + " (Threshold: " + SIMILARITY_THRESHOLD + ")");
+
+        return lastSimilarityScore >= SIMILARITY_THRESHOLD;
     }
+
+    public float getLastSimilarityScore() {
+        return lastSimilarityScore;
+    }
+
+    // ============================
+    // Similarity Calculations
+    // ============================
+
+    public float calculateSimilarity(float[] embedding1, float[] embedding2) {
+        if (embedding1 == null || embedding2 == null ||
+                embedding1.length != embedding2.length) {
+            return 0.0f;
+        }
+
+        normalizeEmbedding(embedding1);
+        normalizeEmbedding(embedding2);
+
+        float dotProduct = 0.0f;
+        for (int i = 0; i < embedding1.length; i++) {
+            dotProduct += embedding1[i] * embedding2[i];
+        }
+
+        float rawSimilarity = (dotProduct + 1.0f) / 2.0f;
+        return (float) Math.pow(rawSimilarity, 0.4);
+    }
+
+    // ============================
+    // Data Conversion
+    // ============================
 
     public byte[] embeddingToBytes(float[] embedding) {
         if (embedding == null || embedding.length != EMBEDDING_SIZE) {
@@ -96,32 +144,11 @@ public class FaceRecognition {
         return embedding;
     }
 
-    public float calculateSimilarity(float[] embedding1, float[] embedding2) {
-        if (embedding1 == null || embedding2 == null ||
-                embedding1.length != embedding2.length) {
-            return 0.0f;
-        }
-
-        // Normalize embeddings first
-        normalizeEmbedding(embedding1);
-        normalizeEmbedding(embedding2);
-
-        // Calculate cosine similarity
-        float dotProduct = 0.0f;
-        for (int i = 0; i < embedding1.length; i++) {
-            dotProduct += embedding1[i] * embedding2[i];
-        }
-
-        // Convert from [-1,1] to [0,1] range
-        float rawSimilarity = (dotProduct + 1.0f) / 2.0f;
-
-        // Adjust the curve to amplify similarity scores
-        // Using power of 0.4 to push scores higher
-        return (float) Math.pow(rawSimilarity, 0.4);
-    }
+    // ============================
+    // Helper Methods
+    // ============================
 
     private void normalizeEmbedding(float[] embedding) {
-        // Calculate magnitude
         float sumSquares = 0.0f;
         for (float v : embedding) {
             if (!Float.isNaN(v) && !Float.isInfinite(v)) {
@@ -131,12 +158,26 @@ public class FaceRecognition {
 
         float magnitude = (float) Math.sqrt(sumSquares);
 
-        // Normalize if magnitude is significant
         if (magnitude > 1e-6f) {
             for (int i = 0; i < embedding.length; i++) {
                 embedding[i] /= magnitude;
             }
         }
+    }
+
+    private float[] l2Normalize(float[] embedding) {
+        float squareSum = 0.0f;
+        for (float val : embedding) {
+            squareSum += val * val;
+        }
+
+        float l2Norm = (float) Math.sqrt(squareSum);
+        if (l2Norm > 0) {
+            for (int i = 0; i < embedding.length; i++) {
+                embedding[i] /= l2Norm;
+            }
+        }
+        return embedding;
     }
 
     private void logEmbeddingValues(String label, float[] embedding) {

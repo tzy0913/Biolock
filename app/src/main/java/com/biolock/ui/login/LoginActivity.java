@@ -1,3 +1,7 @@
+/**
+ * Activity handling user authentication through both manual and face login.
+ * Manages camera preview, face detection, liveness checks, and login flow.
+ */
 package com.biolock.ui.login;
 
 import android.Manifest;
@@ -25,7 +29,6 @@ import androidx.camera.view.PreviewView;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-
 import com.biolock.R;
 import com.biolock.model.SecuritySettings;
 import com.biolock.model.User;
@@ -42,7 +45,6 @@ import com.google.mlkit.vision.face.Face;
 import com.google.mlkit.vision.face.FaceDetection;
 import com.google.mlkit.vision.face.FaceDetector;
 import com.google.mlkit.vision.face.FaceDetectorOptions;
-
 import java.util.Calendar;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -50,6 +52,8 @@ import java.util.concurrent.Executors;
 
 public class LoginActivity extends AppCompatActivity {
     private static final String TAG = "LoginActivity";
+
+    // Constants
     private static final int PERMISSION_REQUEST_CODE = 10;
     private static final String[] REQUIRED_PERMISSIONS = new String[]{Manifest.permission.CAMERA};
     private static final long WELCOME_DELAY = 1500;
@@ -66,7 +70,7 @@ public class LoginActivity extends AppCompatActivity {
     private TextView statusText;
     private View overlayView;
 
-    // Repositories and Utils
+    // Dependencies
     private UserRepository userRepository;
     private FaceAuthenticationRepository faceAuthenticationRepository;
     private SecuritySettings securitySettings;
@@ -85,6 +89,8 @@ public class LoginActivity extends AppCompatActivity {
     private boolean isAuthInProgress = false;
     private int currentAttempt = 0;
 
+    // Activity Lifecycle
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -102,6 +108,36 @@ public class LoginActivity extends AppCompatActivity {
 
         initializeComponents();
     }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (cameraProvider != null) {
+            cameraProvider.unbindAll();
+        }
+
+        // Reset views' alpha values
+        if (previewView != null) previewView.setAlpha(1f);
+        if (overlayView != null) overlayView.setAlpha(1f);
+        if (findViewById(R.id.statusLayout) != null) findViewById(R.id.statusLayout).setAlpha(1f);
+        if (findViewById(R.id.buttonBackToChoiceFromFace) != null) {
+            findViewById(R.id.buttonBackToChoiceFromFace).setAlpha(1f);
+        }
+        if (welcomeOverlay != null) welcomeOverlay.setAlpha(1f);
+
+        resetFaceAuthState();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (cameraProvider != null) {
+            cameraProvider.unbindAll();
+        }
+        cameraExecutor.shutdown();
+    }
+
+    // Initialization Methods
 
     private void initializeComponents() {
         initializeViews();
@@ -382,7 +418,11 @@ public class LoginActivity extends AppCompatActivity {
             try {
                 Thread.sleep(800); // Show "Verifying..." message
 
-                Result<Boolean> authResult = faceAuthenticationRepository.authenticate(lastUserId, faceBitmap);
+                Result<Boolean> authResult = faceAuthenticationRepository.authenticate(
+                        lastUserId,
+                        faceBitmap,
+                        FaceAuthenticationRepository.AuthPurpose.LOGIN
+                );
 
                 if (authResult.isSuccess() && authResult.getData()) {
                     isAuthenticationSuccessful = true;
@@ -661,31 +701,7 @@ public class LoginActivity extends AppCompatActivity {
         }
     }
 
-    @Override
-    protected void onPause() {
-        super.onPause();
-        if (cameraProvider != null) {
-            cameraProvider.unbindAll();
-        }
 
-        // Reset views' alpha values
-        if (previewView != null) previewView.setAlpha(1f);
-        if (overlayView != null) overlayView.setAlpha(1f);
-        if (findViewById(R.id.statusLayout) != null) findViewById(R.id.statusLayout).setAlpha(1f);
-        if (findViewById(R.id.buttonBackToChoiceFromFace) != null) {
-            findViewById(R.id.buttonBackToChoiceFromFace).setAlpha(1f);
-        }
-        if (welcomeOverlay != null) welcomeOverlay.setAlpha(1f);
 
-        resetFaceAuthState();
-    }
 
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (cameraProvider != null) {
-            cameraProvider.unbindAll();
-        }
-        cameraExecutor.shutdown();
-    }
 }

@@ -1,19 +1,55 @@
+/**
+ * Model class representing a user in the system.
+ * Supports two types of users: students and instructors.
+ * Contains basic user information and authentication details.
+ */
 package com.biolock.model;
 
 import java.util.Date;
 
 public class User {
+    // ============================
+    // Role Constants
+    // ============================
+    /** Role identifier for student users */
     public static final String ROLE_STUDENT = "student";
+    /** Role identifier for instructor users */
     public static final String ROLE_INSTRUCTOR = "instructor";
-    private Long userId;
-    private String name;
-    private String email;
-    private String role;
-    private String password;
-    private Date createdAt;
 
+    // ============================
+    // Core User Information
+    // ============================
+    private Long userId;             // Unique identifier for the user
+    private String name;             // Full name of the user
+    private String email;            // Email address (used for login)
+
+    // ============================
+    // Authentication Details
+    // ============================
+    private String role;             // User's role (student/instructor)
+    private String password;         // Encrypted password
+
+    // ============================
+    // Metadata
+    // ============================
+    private Date createdAt;          // Account creation timestamp
+
+    // ============================
+    // Constructors
+    // ============================
+
+    /**
+     * Default constructor
+     */
     public User() {}
 
+    /**
+     * Constructor for creating a new user
+     * @param name User's full name
+     * @param email User's email address
+     * @param role User's role (should use ROLE_* constants)
+     * @param password User's password (will be encrypted)
+     */
     public User(String name, String email, String role, String password) {
         this.name = name;
         this.email = email;
@@ -22,7 +58,10 @@ public class User {
         this.createdAt = new Date();
     }
 
-    // Getters and Setters
+    // ============================
+    // Core Information Getters/Setters
+    // ============================
+
     public Long getUserId() {
         return userId;
     }
@@ -47,6 +86,10 @@ public class User {
         this.email = email;
     }
 
+    // ============================
+    // Authentication Getters/Setters
+    // ============================
+
     public String getRole() {
         return role;
     }
@@ -63,6 +106,10 @@ public class User {
         this.password = password;
     }
 
+    // ============================
+    // Metadata Getters/Setters
+    // ============================
+
     public Date getCreatedAt() {
         return createdAt;
     }
@@ -71,6 +118,14 @@ public class User {
         this.createdAt = createdAt;
     }
 
+    // ============================
+    // Helper Methods
+    // ============================
+
+    /**
+     * Checks if the user is an instructor
+     * @return true if user has instructor role, false otherwise
+     */
     public boolean isInstructor() {
         return ROLE_INSTRUCTOR.equals(this.role);
     }

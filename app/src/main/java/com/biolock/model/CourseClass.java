@@ -1,10 +1,38 @@
-// CourseClass.java
+/**
+ * Model class representing a course class.
+ * Contains information about the course, session details, and class status.
+ * Includes static tracking of the current active class.
+ */
 package com.biolock.model;
 
 import java.sql.Date;
 import java.sql.Time;
 
 public class CourseClass {
+    // ============================
+    // Static Class Management
+    // ============================
+    private static CourseClass currentClass;
+
+    /**
+     * Gets the currently active class
+     * @return Currently active CourseClass instance
+     */
+    public static CourseClass getCurrentClass() {
+        return currentClass;
+    }
+
+    /**
+     * Sets the currently active class
+     * @param courseClass CourseClass to set as current
+     */
+    public static void setCurrentClass(CourseClass courseClass) {
+        currentClass = courseClass;
+    }
+
+    // ============================
+    // Course Information
+    // ============================
     private Long classId;
     private String moduleCode;
     private String moduleName;
@@ -12,6 +40,10 @@ public class CourseClass {
     private String type;  // lecture/tutorial
     private String room;
     private Long instructorId;
+
+    // ============================
+    // Session Information
+    // ============================
     private Long sessionId;
     private Date sessionDate;
     private Time startTime;
@@ -19,20 +51,15 @@ public class CourseClass {
     private String status;
     private String validationCode;
 
-    private static CourseClass currentClass;
-
+    // ============================
+    // Constructor
+    // ============================
     public CourseClass() {}
 
-    // Static methods for current class
-    public static CourseClass getCurrentClass() {
-        return currentClass;
-    }
+    // ============================
+    // Course Information Getters/Setters
+    // ============================
 
-    public static void setCurrentClass(CourseClass courseClass) {
-        currentClass = courseClass;
-    }
-
-    // Existing getters and setters
     public Long getClassId() {
         return classId;
     }
@@ -89,7 +116,10 @@ public class CourseClass {
         this.instructorId = instructorId;
     }
 
-    // New getters and setters for session fields
+    // ============================
+    // Session Information Getters/Setters
+    // ============================
+
     public Long getSessionId() {
         return sessionId;
     }

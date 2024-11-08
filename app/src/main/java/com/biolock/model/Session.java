@@ -1,19 +1,44 @@
+/**
+ * Model class representing a class session.
+ * Contains information about when a class occurs and its validation status.
+ * Each course class can have multiple sessions on different dates.
+ */
 package com.biolock.model;
 
 import java.sql.Time;
 import java.util.Date;
 
 public class Session {
-    private Long sessionId;
-    private Long classId;
-    private Date date;
-    private Time startTime;
-    private Time endTime;
-    private String validationCode;
+    // ============================
+    // Session Identifiers
+    // ============================
+    private Long sessionId;          // Unique identifier for this session
+    private Long classId;            // Reference to the associated course class
 
+    // ============================
+    // Session Timing
+    // ============================
+    private Date date;               // Date of the session
+    private Time startTime;          // When the session begins
+    private Time endTime;            // When the session ends
+
+    // ============================
+    // Session Validation
+    // ============================
+    private String validationCode;   // Code used to verify attendance
+
+    // ============================
+    // Constructor
+    // ============================
+    /**
+     * Default constructor
+     */
     public Session() {}
 
-    // Getters and Setters
+    // ============================
+    // Session Identifiers Getters/Setters
+    // ============================
+
     public Long getSessionId() {
         return sessionId;
     }
@@ -29,6 +54,10 @@ public class Session {
     public void setClassId(Long classId) {
         this.classId = classId;
     }
+
+    // ============================
+    // Session Timing Getters/Setters
+    // ============================
 
     public Date getDate() {
         return date;
@@ -53,6 +82,10 @@ public class Session {
     public void setEndTime(Time endTime) {
         this.endTime = endTime;
     }
+
+    // ============================
+    // Session Validation Getters/Setters
+    // ============================
 
     public String getValidationCode() {
         return validationCode;

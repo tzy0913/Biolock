@@ -1,30 +1,80 @@
+/**
+ * Repository for managing user accounts and related security operations.
+ * Handles user authentication, registration, and security settings management.
+ * Integrates user data with security and logging functionality.
+ */
 package com.biolock.repository;
 
 import android.util.Log;
-
-import com.biolock.database.dao.FaceRecognitionLogDao;
-import com.biolock.database.dao.SecuritySettingsDao;
-import com.biolock.database.dao.UserDao;
-import com.biolock.model.FaceRecognitionLog;
-import com.biolock.model.SecuritySettings;
-import com.biolock.model.User;
-
+import com.biolock.database.dao.*;
+import com.biolock.model.*;
 import java.sql.*;
 import java.util.Calendar;
 import java.util.List;
 
 public class UserRepository {
     private static final String TAG = "UserRepository";
+
+    // Data Access Objects
     private final UserDao userDao;
     private final SecuritySettingsDao securitySettingsDao;
     private final FaceRecognitionLogDao logDao;
 
+    // ============================
+    // Constructor
+    // ============================
+
+    /**
+     * Initializes the repository with necessary DAOs
+     */
     public UserRepository() {
         this.userDao = new UserDao();
         this.securitySettingsDao = new SecuritySettingsDao();
         this.logDao = new FaceRecognitionLogDao();
     }
 
+    // ============================
+    // Authentication Operations
+    // ============================
+
+    /**
+     * Authenticates a user with email and password
+     * Logs both successful and failed attempts
+     *
+     * @param email User's email address
+     * @param password User's password
+     * @return Result containing authenticated user or error
+     */
+    public Result<User> login(String email, String password) {
+        try {
+            User user = userDao.findByEmail(email);
+            if (user == null) {
+                return Result.error("Invalid email or password");
+            }
+
+            boolean authenticated = userDao.verifyPassword(email, password);
+            // Create log entry
+            logLoginAttempt(user.getUserId(), authenticated);
+
+            if (!authenticated) {
+                return Result.error("Invalid email or password");
+            }
+
+            return Result.success(user);
+        } catch (SQLException e) {
+            Log.e(TAG, "Login error", e);
+            return Result.error("Login failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Registers a new user account with default security settings
+     *
+     * @param name User's full name
+     * @param email User's email address
+     * @param password User's password
+     * @return Result containing created user or error
+     */
     public Result<User> register(String name, String email, String password) {
         try {
             if (userDao.credentialsExist(email)) {
@@ -36,17 +86,13 @@ public class UserRepository {
             user.setName(name);
             user.setEmail(email);
             user.setPassword(password);
-            user.setRole(User.ROLE_STUDENT); // Explicitly set student role
+            user.setRole(User.ROLE_STUDENT);
 
             Long userId = userDao.save(user);
             user.setUserId(userId);
 
             // Initialize default security settings
-            SecuritySettings settings = new SecuritySettings();
-            settings.setUserId(userId);
-            settings.setMaxFailedAttempts(3);
-            settings.setLockoutDurationMins(15);
-            securitySettingsDao.save(settings);
+            initializeSecuritySettings(userId);
 
             return Result.success(user);
         } catch (SQLException e) {
@@ -55,45 +101,16 @@ public class UserRepository {
         }
     }
 
-    public Result<User> login(String email, String password) {
-        try {
-            User user = userDao.findByEmail(email);
-            if (user == null) {
-                return Result.error("Invalid email or password");
-            }
+    // ============================
+    // Security Operations
+    // ============================
 
-            // Verify password using MySQL's encryption in DAO
-            if (!userDao.verifyPassword(email, password)) {
-                // Log failed manual login attempt
-                FaceRecognitionLog log = new FaceRecognitionLog();
-                log.setUserId(user.getUserId());
-                log.setSuccess(false);
-                log.setSimilarity(1.0f); // Indicates manual login attempt
-                log.setActionType(FaceRecognitionLog.ActionType.LOGIN);
-                log.setDeviceInfo(android.os.Build.MODEL);
-                log.setIpAddress("127.0.0.1");
-                logDao.logAttempt(log);
-
-                return Result.error("Invalid email or password");
-            }
-
-            // Log successful manual login
-            FaceRecognitionLog log = new FaceRecognitionLog();
-            log.setUserId(user.getUserId());
-            log.setSuccess(true);
-            log.setSimilarity(1.0f); // Indicates manual login
-            log.setActionType(FaceRecognitionLog.ActionType.LOGIN);
-            log.setDeviceInfo(android.os.Build.MODEL);
-            log.setIpAddress("127.0.0.1");
-            logDao.logAttempt(log);
-
-            return Result.success(user);
-        } catch (SQLException e) {
-            Log.e(TAG, "Login error", e);
-            return Result.error("Login failed: " + e.getMessage());
-        }
-    }
-
+    /**
+     * Checks if a user's account is temporarily locked due to failed attempts
+     *
+     * @param userId ID of the user to check
+     * @return Result containing lock status
+     */
     public Result<Boolean> isUserLocked(Long userId) {
         try {
             SecuritySettings settings = securitySettingsDao.getSettings(userId);
@@ -102,24 +119,19 @@ public class UserRepository {
             }
 
             // Get recent failed attempts from logs
-            Calendar cal = Calendar.getInstance();
-            cal.add(Calendar.MINUTE, -settings.getLockoutDurationMins());
-            java.sql.Date since = new java.sql.Date(cal.getTimeInMillis());
-
-            // Count failed face auth attempts only (not manual logins)
             List<FaceRecognitionLog> recentLogs = logDao.getRecentLogs(userId, settings.getMaxFailedAttempts());
             int failedAttempts = 0;
             long latestFailedTime = 0;
 
             for (FaceRecognitionLog log : recentLogs) {
-                if (!log.isSuccess() && log.getSimilarity() < 1.0f) { // Face login attempt
-                    failedAttempts++;
-                    if (log.getAttemptTimestamp().getTime() > latestFailedTime) {
-                        latestFailedTime = log.getAttemptTimestamp().getTime();
+                // Only count failed LOGIN attempts, ignore ATTENDANCE attempts
+                if (!log.isSuccess() && log.getActionType() == FaceRecognitionLog.ActionType.LOGIN) {
+                    if (log.getSimilarity() < 1.0f) { // Face login attempt
+                        failedAttempts++;
+                        latestFailedTime = Math.max(latestFailedTime, log.getAttemptTimestamp().getTime());
                     }
                 } else if (log.isSuccess() && log.getSimilarity() == 1.0f) { // Manual login success
-                    // If there's a successful manual login after failed attempts, user is not locked
-                    return Result.success(false);
+                    return Result.success(false); // Successful manual login resets lockout
                 }
             }
 
@@ -136,6 +148,9 @@ public class UserRepository {
         }
     }
 
+    /**
+     * Retrieves security settings for a user
+     */
     public Result<SecuritySettings> getSecuritySettings(Long userId) {
         try {
             SecuritySettings settings = securitySettingsDao.getSettings(userId);
@@ -149,6 +164,9 @@ public class UserRepository {
         }
     }
 
+    /**
+     * Updates security settings for a user
+     */
     public Result<Boolean> updateSecuritySettings(Long userId, int maxAttempts, int lockoutDuration) {
         try {
             SecuritySettings settings = securitySettingsDao.getSettings(userId);
@@ -167,6 +185,13 @@ public class UserRepository {
         }
     }
 
+    // ============================
+    // User Information Operations
+    // ============================
+
+    /**
+     * Retrieves user information by ID
+     */
     public Result<User> getUserById(Long userId) {
         try {
             User user = userDao.findById(userId);
@@ -178,5 +203,34 @@ public class UserRepository {
             Log.e(TAG, "Error getting user", e);
             return Result.error("Failed to get user: " + e.getMessage());
         }
+    }
+
+    // ============================
+    // Helper Methods
+    // ============================
+
+    /**
+     * Initializes default security settings for a new user
+     */
+    private void initializeSecuritySettings(Long userId) throws SQLException {
+        SecuritySettings settings = new SecuritySettings();
+        settings.setUserId(userId);
+        settings.setMaxFailedAttempts(3);
+        settings.setLockoutDurationMins(15);
+        securitySettingsDao.save(settings);
+    }
+
+    /**
+     * Logs a login attempt
+     */
+    private void logLoginAttempt(Long userId, boolean success) throws SQLException {
+        FaceRecognitionLog log = new FaceRecognitionLog();
+        log.setUserId(userId);
+        log.setSuccess(success);
+        log.setSimilarity(1.0f); // Indicates manual login
+        log.setActionType(FaceRecognitionLog.ActionType.LOGIN); // Keep as LOGIN for manual attempts
+        log.setDeviceInfo(android.os.Build.MODEL);
+        log.setIpAddress("127.0.0.1");
+        logDao.logAttempt(log);
     }
 }

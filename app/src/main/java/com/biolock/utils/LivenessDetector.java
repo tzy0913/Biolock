@@ -1,27 +1,46 @@
+/**
+ * Detector for verifying user liveness through facial movements.
+ * Implements a state machine to guide users through a series of facial movements
+ * to prevent spoofing attempts using photos or videos.
+ */
 package com.biolock.utils;
 
 import android.view.View;
 import com.google.mlkit.vision.face.Face;
 
 public class LivenessDetector {
+    // Configuration thresholds
     private static final float HEAD_ROTATION_THRESHOLD = 10f;
     private static final float SMILE_THRESHOLD = 0.8f;
 
+    /**
+     * States in the liveness verification process
+     */
     public enum LivenessState {
-        WAITING,        // Initial state
+        WAITING,        // Initial state, waiting to begin
         MOVE_LEFT,      // User should turn head left
         MOVE_RIGHT,     // User should turn head right
         SMILE,          // User should smile
         LOOK_STRAIGHT,  // User should look straight
-        COMPLETED      // All checks passed
+        COMPLETED       // All checks passed
     }
 
+    // Current state tracking
     private LivenessState currentState = LivenessState.WAITING;
+
+    // Completion flags
     private boolean leftChecked = false;
     private boolean rightChecked = false;
     private boolean smileChecked = false;
     private boolean straightChecked = false;
 
+    // ============================
+    // State Management
+    // ============================
+
+    /**
+     * Resets the detector to initial state
+     */
     public void reset() {
         currentState = LivenessState.WAITING;
         leftChecked = false;
@@ -30,14 +49,22 @@ public class LivenessDetector {
         straightChecked = false;
     }
 
+    /**
+     * Processes a single frame for liveness detection
+     * @param face Detected face from MLKit
+     * @return LivenessResult containing current state and instructions
+     */
     public LivenessResult processFrame(Face face) {
+        // Get face orientation
         float rotY = face.getHeadEulerAngleY();  // Head rotation Y (left/right)
         float rotZ = face.getHeadEulerAngleZ();  // Head rotation Z (tilt)
 
+        // Check for excessive head tilt
         if (Math.abs(rotZ) > HEAD_ROTATION_THRESHOLD) {
             return new LivenessResult(false, "Please keep your head straight", currentState);
         }
 
+        // Process current state
         switch (currentState) {
             case WAITING:
                 if (isLookingStraight(rotY)) {
@@ -86,10 +113,24 @@ public class LivenessDetector {
         return new LivenessResult(false, getInstructionForState(currentState), currentState);
     }
 
+    // ============================
+    // Helper Methods
+    // ============================
+
+    /**
+     * Checks if face is looking straight ahead
+     * @param rotY Head rotation angle
+     * @return true if within threshold
+     */
     private boolean isLookingStraight(float rotY) {
         return Math.abs(rotY) < HEAD_ROTATION_THRESHOLD/2;
     }
 
+    /**
+     * Gets instruction message for current state
+     * @param state Current liveness state
+     * @return Instruction message for user
+     */
     private String getInstructionForState(LivenessState state) {
         switch (state) {
             case WAITING: return "Look straight at the camera";
@@ -102,10 +143,17 @@ public class LivenessDetector {
         }
     }
 
+    // ============================
+    // Result Class
+    // ============================
+
+    /**
+     * Result class containing liveness check status and instructions
+     */
     public static class LivenessResult {
-        public final boolean isCompleted;
-        public final String message;
-        public final LivenessState state;
+        public final boolean isCompleted;   // Whether all checks are completed
+        public final String message;        // Instruction/status message
+        public final LivenessState state;   // Current state
 
         public LivenessResult(boolean isCompleted, String message, LivenessState state) {
             this.isCompleted = isCompleted;

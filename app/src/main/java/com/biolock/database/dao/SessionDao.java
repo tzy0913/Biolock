@@ -1,3 +1,8 @@
+/**
+ * Data Access Object for managing class sessions.
+ * Handles operations related to starting, ending, and validating class sessions,
+ * including generation and verification of validation codes.
+ */
 package com.biolock.database.dao;
 
 import android.util.Log;
@@ -10,6 +15,16 @@ import java.util.Random;
 public class SessionDao {
     private static final String TAG = "SessionDao";
 
+    // ============================
+    // Session Management Operations
+    // ============================
+
+    /**
+     * Starts a session by generating and setting a validation code
+     * Only works within the valid class time window
+     * @param sessionId ID of the session to start
+     * @return Result containing the validation code or error message
+     */
     public Result<String> startSession(Long sessionId) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
@@ -55,6 +70,12 @@ public class SessionDao {
         }
     }
 
+    /**
+     * Ends a session before its scheduled end time
+     * Only works for active sessions that haven't ended yet
+     * @param sessionId ID of the session to end
+     * @return Result indicating success or failure
+     */
     public Result<Void> endSessionEarly(Long sessionId) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
@@ -94,6 +115,16 @@ public class SessionDao {
         }
     }
 
+    // ============================
+    // Session Validation Operations
+    // ============================
+
+    /**
+     * Validates a session code within the active time window
+     * @param sessionId ID of the session
+     * @param code Validation code to verify
+     * @return Result containing boolean indicating if code is valid
+     */
     public Result<Boolean> validateSessionCode(Long sessionId, String code) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
@@ -117,6 +148,15 @@ public class SessionDao {
         }
     }
 
+    // ============================
+    // Session Retrieval Operations
+    // ============================
+
+    /**
+     * Retrieves detailed session information by ID
+     * @param sessionId ID of the session to retrieve
+     * @return Result containing Session object or error message
+     */
     public Result<Session> getSessionById(Long sessionId) throws SQLException {
         Connection conn = null;
         PreparedStatement stmt = null;
@@ -131,13 +171,7 @@ public class SessionDao {
 
             rs = stmt.executeQuery();
             if (rs.next()) {
-                Session session = new Session();
-                session.setSessionId(rs.getLong("session_id"));
-                session.setClassId(rs.getLong("class_id"));
-                session.setDate(rs.getDate("date"));
-                session.setStartTime(rs.getTime("start_time"));
-                session.setEndTime(rs.getTime("end_time"));
-                session.setValidationCode(rs.getString("validation_code"));
+                Session session = mapResultSetToSession(rs);
                 return Result.success(session);
             } else {
                 return Result.error("Session not found");
@@ -147,6 +181,27 @@ public class SessionDao {
         }
     }
 
+    // ============================
+    // Helper Methods
+    // ============================
+
+    /**
+     * Maps a database result set row to a Session object
+     */
+    private Session mapResultSetToSession(ResultSet rs) throws SQLException {
+        Session session = new Session();
+        session.setSessionId(rs.getLong("session_id"));
+        session.setClassId(rs.getLong("class_id"));
+        session.setDate(rs.getDate("date"));
+        session.setStartTime(rs.getTime("start_time"));
+        session.setEndTime(rs.getTime("end_time"));
+        session.setValidationCode(rs.getString("validation_code"));
+        return session;
+    }
+
+    /**
+     * Safely closes database resources
+     */
     private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
         if (rs != null) {
             try { rs.close(); } catch (SQLException e) { Log.e(TAG, "Error closing ResultSet", e); }

@@ -1,23 +1,51 @@
+/**
+ * Model class for managing user security settings and lockout policies.
+ * Handles configuration for failed login attempts, lockout durations,
+ * and tracks the current security status of a user.
+ */
 package com.biolock.model;
 
 import java.util.Date;
 
 public class SecuritySettings {
-    private Long userId;
-    private int maxFailedAttempts;
-    private int lockoutDurationMins;
-    private int currentFailedAttempts;
-    private Date lastFailedAttempt;
-    private Date lastUpdated;
+    // ============================
+    // Security Policy Configuration
+    // ============================
+    private Long userId;                     // User these settings belong to
+    private int maxFailedAttempts;          // Maximum allowed failed attempts before lockout
+    private int lockoutDurationMins;        // Duration of lockout in minutes
 
+    // ============================
+    // Current Security Status
+    // ============================
+    private int currentFailedAttempts;      // Current count of consecutive failed attempts
+    private Date lastFailedAttempt;         // Timestamp of most recent failed attempt
+
+    // ============================
+    // Metadata
+    // ============================
+    private Date lastUpdated;               // Last time settings were modified
+
+    // ============================
+    // Constructor
+    // ============================
+    /**
+     * Creates new security settings with default values:
+     * - Max failed attempts: 3
+     * - Lockout duration: 15 minutes
+     * - Current failed attempts: 0
+     */
     public SecuritySettings() {
-        // Default settings
+        // Default security policy settings
         this.maxFailedAttempts = 3;
         this.lockoutDurationMins = 15;
         this.currentFailedAttempts = 0;
     }
 
-    // Getters and Setters
+    // ============================
+    // Security Policy Getters/Setters
+    // ============================
+
     public Long getUserId() {
         return userId;
     }
@@ -42,6 +70,10 @@ public class SecuritySettings {
         this.lockoutDurationMins = lockoutDurationMins;
     }
 
+    // ============================
+    // Security Status Getters/Setters
+    // ============================
+
     public int getCurrentFailedAttempts() {
         return currentFailedAttempts;
     }
@@ -57,6 +89,10 @@ public class SecuritySettings {
     public void setLastFailedAttempt(Date lastFailedAttempt) {
         this.lastFailedAttempt = lastFailedAttempt;
     }
+
+    // ============================
+    // Metadata Getters/Setters
+    // ============================
 
     public Date getLastUpdated() {
         return lastUpdated;

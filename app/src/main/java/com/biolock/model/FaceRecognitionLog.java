@@ -1,27 +1,61 @@
+/**
+ * Model class representing a face recognition attempt log.
+ * Records details of face recognition attempts including success/failure,
+ * similarity scores, device information, and the type of action attempted.
+ */
 package com.biolock.model;
 
 import java.util.Date;
 
 public class FaceRecognitionLog {
-    private Long logId;
-    private Long userId;
-    private Date attemptTimestamp;
-    private boolean success;
-    private float similarity;
-    private String deviceInfo;
-    private String ipAddress;
-    private ActionType actionType;
-
+    // ============================
+    // Action Types
+    // ============================
+    /**
+     * Types of face recognition actions that can be performed
+     */
     public enum ActionType {
+        /** Initial face registration/update */
         ENROLLMENT,
-        LOGIN
+        LOGIN,
+        /** Authentication attempt for attendance */
+        ATTENDANCE
     }
 
+    // ============================
+    // Core Log Information
+    // ============================
+    private Long logId;              // Unique identifier for the log entry
+    private Long userId;             // User who attempted recognition
+    private Date attemptTimestamp;   // When the attempt occurred
+    private ActionType actionType;   // Type of recognition attempt
+
+    // ============================
+    // Recognition Results
+    // ============================
+    private boolean success;         // Whether the recognition was successful
+    private float similarity;        // Similarity score with stored embedding
+
+    // ============================
+    // Device Context
+    // ============================
+    private String deviceInfo;       // Device information (model, OS, etc.)
+    private String ipAddress;        // IP address of the device
+
+    // ============================
+    // Constructor
+    // ============================
+    /**
+     * Creates a new log entry with current timestamp
+     */
     public FaceRecognitionLog() {
         this.attemptTimestamp = new Date();
     }
 
-    // Getters and Setters
+    // ============================
+    // Core Information Getters/Setters
+    // ============================
+
     public Long getLogId() {
         return logId;
     }
@@ -46,6 +80,18 @@ public class FaceRecognitionLog {
         this.attemptTimestamp = attemptTimestamp;
     }
 
+    public ActionType getActionType() {
+        return actionType;
+    }
+
+    public void setActionType(ActionType actionType) {
+        this.actionType = actionType;
+    }
+
+    // ============================
+    // Recognition Results Getters/Setters
+    // ============================
+
     public boolean isSuccess() {
         return success;
     }
@@ -62,6 +108,10 @@ public class FaceRecognitionLog {
         this.similarity = similarity;
     }
 
+    // ============================
+    // Device Context Getters/Setters
+    // ============================
+
     public String getDeviceInfo() {
         return deviceInfo;
     }
@@ -76,13 +126,5 @@ public class FaceRecognitionLog {
 
     public void setIpAddress(String ipAddress) {
         this.ipAddress = ipAddress;
-    }
-
-    public ActionType getActionType() {
-        return actionType;
-    }
-
-    public void setActionType(ActionType actionType) {
-        this.actionType = actionType;
     }
 }
