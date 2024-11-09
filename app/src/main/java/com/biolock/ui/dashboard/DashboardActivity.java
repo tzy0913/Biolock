@@ -1,6 +1,8 @@
 package com.biolock.ui.dashboard;
 
+import android.app.Activity;
 import android.app.AlertDialog;
+import android.bluetooth.BluetoothAdapter;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -23,6 +25,9 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.core.content.ContextCompat;
@@ -40,6 +45,8 @@ import com.biolock.ui.login.LoginActivity;
 import com.biolock.ui.settings.SettingsActivity;
 import com.biolock.utils.FacePreprocessor;
 import com.biolock.utils.LivenessDetector;
+import com.biolock.utils.ProximityBroadcaster;
+import com.biolock.utils.ProximityValidator;
 import com.biolock.utils.SessionManager;
 import com.biolock.model.User;
 import com.google.mlkit.vision.face.FaceDetector;
@@ -53,7 +60,6 @@ import java.util.concurrent.Executors;
 
 import android.graphics.Bitmap;
 import android.media.Image;
-import android.view.Window;
 
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
@@ -76,7 +82,6 @@ public class DashboardActivity extends AppCompatActivity {
     private LinearLayout sessionButtons;
     private Button buttonStartSession;
     private Button buttonEndSession;
-    private AlertDialog sessionCodeDialog;
     private Button buttonViewClassAttendance;
     private Button buttonAttendanceStatistics;
     private AttendanceRepository attendanceRepository;
@@ -106,6 +111,10 @@ public class DashboardActivity extends AppCompatActivity {
     private int currentAttendanceAttempt = 0;
     private SecuritySettings securitySettings;
     private UserRepository userRepository;
+    private ProximityBroadcaster proximityBroadcaster;
+    private ActivityResultLauncher<Intent> bluetoothEnableLauncher;
+    private Attendance currentPendingAttendance;
+    private boolean isProximityValidated = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -139,6 +148,9 @@ public class DashboardActivity extends AppCompatActivity {
         statusText = findViewById(R.id.statusTextView);
         overlayView = findViewById(R.id.overlayView);
 
+        proximityBroadcaster = new ProximityBroadcaster(this);
+        setupBluetoothLauncher();
+
         // Set greeting
         textGreeting.setText(String.format("Hi, %s!", sessionManager.getUserName()));
 
@@ -159,6 +171,23 @@ public class DashboardActivity extends AppCompatActivity {
             }
             resetFaceAuthState();
         });
+    }
+
+    private void setupBluetoothLauncher() {
+        bluetoothEnableLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    if (result.getResultCode() == Activity.RESULT_OK) {
+                        // Check if this was for instructor or student
+                        boolean isInstructor = User.ROLE_INSTRUCTOR.equals(sessionManager.getUserRole());
+                        checkPermissionsAndStartProximity(isInstructor);
+                    } else {
+                        Toast.makeText(this,
+                                "Proximity validation requires Bluetooth to be enabled",
+                                Toast.LENGTH_LONG).show();
+                    }
+                }
+        );
     }
 
     private void setupDashboard() {
@@ -239,14 +268,21 @@ public class DashboardActivity extends AppCompatActivity {
             textClassInfo.setText(builder);
             buttonViewClassAttendance.setEnabled(true);
 
-            // Enable/disable session buttons based on validation code and status
-            boolean canStart = "ONGOING".equals(currentClass.getStatus())
-                    && currentClass.getValidationCode() == null;
-            boolean canEnd = "ONGOING".equals(currentClass.getStatus())
-                    && currentClass.getValidationCode() != null;
+            // Check if there's an ongoing session with validation code
+            boolean isOngoing = "ONGOING".equals(currentClass.getStatus());
+            boolean hasValidationCode = currentClass.getValidationCode() != null;
 
-            buttonStartSession.setEnabled(canStart);
-            buttonEndSession.setEnabled(canEnd);
+            if (isOngoing && hasValidationCode) {
+                // Session is active with code - need to restart beacon
+                proximityBroadcaster.startBroadcasting(currentClass.getSessionId());
+                buttonStartSession.setEnabled(false);
+                buttonEndSession.setEnabled(true);
+            } else {
+                // No active session or no code yet
+                boolean canStart = isOngoing && !hasValidationCode;
+                buttonStartSession.setEnabled(canStart);
+                buttonEndSession.setEnabled(false);
+            }
         });
     }
 
@@ -257,19 +293,147 @@ public class DashboardActivity extends AppCompatActivity {
             return;
         }
 
+        checkPermissionsAndStartProximity(true);
+    }
+
+    private void checkPermissionsAndStartProximity(boolean isInstructor) {
+        if (!ProximityValidator.hasRequiredPermissions(this)) {
+            List<String> missingPermissions = ProximityValidator.getMissingPermissions(this);
+            requestPermissions(
+                    missingPermissions.toArray(new String[0]),
+                    ProximityValidator.PERMISSION_REQUEST_CODE
+            );
+            return;
+        }
+
+        if (!ProximityValidator.isBleSupported(this)) {
+            Toast.makeText(this,
+                    "This device doesn't support proximity validation",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        if (!ProximityValidator.isBluetoothEnabled(this)) {
+            showEnableProximityDialog();
+            return;
+        }
+
+        // If all checks pass, proceed with operation
+        if (isInstructor) {
+            proceedWithStartSession();
+        } else {
+            proceedWithMarkAttendance();
+        }
+    }
+
+    private void proceedWithStartSession() {
+        CourseClass currentClass = CourseClass.getCurrentClass();
+        if (currentClass == null || currentClass.getSessionId() == null) {
+            Toast.makeText(this, "No active class session", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         new Thread(() -> {
             Result<String> result = sessionRepository.startSession(currentClass.getSessionId());
             runOnUiThread(() -> {
                 if (result.isSuccess()) {
+                    proximityBroadcaster.startBroadcasting(currentClass.getSessionId()); // This now accepts Long
                     showSessionCodeDialog(result.getData());
                     buttonStartSession.setEnabled(false);
                     buttonEndSession.setEnabled(true);
-                    loadDashboardData(true); // Refresh dashboard
+                    loadDashboardData(true);
                 } else {
                     Toast.makeText(this, result.getError(), Toast.LENGTH_LONG).show();
                 }
             });
         }).start();
+    }
+
+    private void showEnableProximityDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Proximity Validation Required")
+                .setMessage("Proximity validation requires Bluetooth. Would you like to enable it now?")
+                .setPositiveButton("Enable", (dialog, which) -> {
+                    Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                    bluetoothEnableLauncher.launch(enableBtIntent);
+                })
+                .setNegativeButton("Cancel", (dialog, which) ->
+                        Toast.makeText(this,
+                                "Proximity validation requires Bluetooth to be enabled",
+                                Toast.LENGTH_LONG).show())
+                .setCancelable(false)
+                .show();
+    }
+
+    private void proceedWithMarkAttendance() {
+        if (currentPendingAttendance == null) {
+            Toast.makeText(this, "Session information not found", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (isProximityValidated) {
+            return; // Skip if already validated
+        }
+
+        proximityBroadcaster.setProximityListener(new ProximityBroadcaster.ProximityListener() {
+            @Override
+            public void onProximityDetected(Long sessionId) {
+                if (isProximityValidated) return; // Skip if already validated
+
+                if (sessionId.equals(currentPendingAttendance.getSessionId())) {
+                    isProximityValidated = true;
+                    proximityBroadcaster.stopScanning(); // Stop scanning immediately
+
+                    runOnUiThread(() -> {
+                        Toast.makeText(DashboardActivity.this,
+                                "Proximity validation successful",
+                                Toast.LENGTH_SHORT).show();
+                        checkFaceEnrollmentAndProceed(currentPendingAttendance);
+                    });
+                }
+            }
+
+            @Override
+            public void onProximityTimeout() {
+                if (isProximityValidated) return;
+
+                runOnUiThread(() -> {
+                    Toast.makeText(DashboardActivity.this,
+                            "Could not validate proximity. Please ensure you are in the classroom.",
+                            Toast.LENGTH_LONG).show();
+                });
+                isProximityValidated = false; // Reset flag on timeout
+            }
+
+            @Override
+            public void onProximityError(String error) {
+                if (isProximityValidated) return;
+
+                runOnUiThread(() -> {
+                    Toast.makeText(DashboardActivity.this,
+                            "Proximity validation error: " + error,
+                            Toast.LENGTH_LONG).show();
+                });
+                isProximityValidated = false; // Reset flag on error
+            }
+        });
+
+        proximityBroadcaster.startScanning();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == ProximityValidator.PERMISSION_REQUEST_CODE) {
+            if (ProximityValidator.hasRequiredPermissions(this)) {
+                boolean isInstructor = User.ROLE_INSTRUCTOR.equals(sessionManager.getUserRole());
+                checkPermissionsAndStartProximity(isInstructor);
+            } else {
+                Toast.makeText(this,
+                        "Proximity validation requires all permissions to be granted",
+                        Toast.LENGTH_LONG).show();
+            }
+        }
     }
 
     private void showSessionCodeDialog(String code) {
@@ -306,10 +470,11 @@ public class DashboardActivity extends AppCompatActivity {
             Result<Void> result = sessionRepository.endSession(currentClass.getSessionId());
             runOnUiThread(() -> {
                 if (result.isSuccess()) {
+                    proximityBroadcaster.stopBroadcasting();
                     Toast.makeText(this, "Session ended", Toast.LENGTH_SHORT).show();
                     buttonStartSession.setEnabled(true);
                     buttonEndSession.setEnabled(false);
-                    loadDashboardData(true); // Refresh dashboard
+                    loadDashboardData(true);
                 } else {
                     Toast.makeText(this, result.getError(), Toast.LENGTH_LONG).show();
                 }
@@ -381,18 +546,6 @@ public class DashboardActivity extends AppCompatActivity {
             }
         }
         return null;
-    }
-
-    private boolean canMarkAttendance(Attendance attendance) {
-        if (attendance == null) return false;
-
-        // Can mark if:
-        // 1. Not already marked (status is pending/not marked)
-        // 2. Session has validation code
-        boolean notMarked = "pending".equalsIgnoreCase(attendance.getStatus()) ||
-                "NOT MARKED".equalsIgnoreCase(attendance.getStatus());
-
-        return notMarked && attendance.getValidationCode() != null;
     }
 
     private void appendClassInfo(SpannableStringBuilder builder, CourseClass courseClass) {
@@ -485,78 +638,23 @@ public class DashboardActivity extends AppCompatActivity {
     }
 
     private void markAttendance() {
-        // Get current attendance session
         Attendance currentAttendance = findCurrentOrUpcomingClass(attendanceList);
         if (currentAttendance == null || currentAttendance.getSessionId() == null) {
             Toast.makeText(this, "No active session found", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // Initialize face auth repository if needed
-        if (faceAuthenticationRepository == null) {
-            faceAuthenticationRepository = new FaceAuthenticationRepository(this);
-        }
-
-        // Check face enrollment first
-        new Thread(() -> {
-            Result<Boolean> hasEnrollment = faceAuthenticationRepository.hasFaceEnrolled(sessionManager.getUserId());
-
-            runOnUiThread(() -> {
-                if (!hasEnrollment.isSuccess() || !hasEnrollment.getData()) {
-                    Toast.makeText(this, "Face not enrolled. Please enroll face first.",
-                            Toast.LENGTH_LONG).show();
-                    return;
-                }
-
-                // If face is enrolled, proceed with OTP verification
-                AlertDialog.Builder builder = new AlertDialog.Builder(this);
-                builder.setTitle("Step 1: Enter Attendance Code");
-
-                final EditText input = new EditText(this);
-                input.setInputType(InputType.TYPE_CLASS_NUMBER);
-                input.setFilters(new InputFilter[] { new InputFilter.LengthFilter(6) });
-                input.setGravity(Gravity.CENTER);
-                input.setHint("Enter 6-digit code");
-
-                LinearLayout container = new LinearLayout(this);
-                container.setPadding(60, 40, 60, 20);
-                container.addView(input);
-                builder.setView(container);
-
-                builder.setPositiveButton("Submit", null);
-                builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
-
-                AlertDialog dialog = builder.create();
-
-                dialog.setOnShowListener(dialogInterface -> {
-                    Button submitButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-                    submitButton.setOnClickListener(view -> {
-                        String code = input.getText().toString().trim();
-                        if (!code.matches("\\d{6}")) {
-                            input.setError("Please enter a valid 6-digit code");
-                            return;
-                        }
-
-                        submitButton.setEnabled(false);
-                        submitButton.setText("Verifying...");
-
-                        validateCodeAndProceed(code, currentAttendance, input, submitButton, dialog);
-                    });
-                });
-
-                dialog.show();
-                input.requestFocus();
-                dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
-            });
-        }).start();
+        isProximityValidated = false; // Reset the flag when starting new attendance
+        currentPendingAttendance = currentAttendance;
+        checkPermissionsAndStartProximity(false);
     }
 
-    private void validateCodeAndProceed(String code, Attendance currentAttendance,
+    private void validateCodeAndProceed(String code, Attendance attendance,
                                         EditText input, Button submitButton, AlertDialog dialog) {
         new Thread(() -> {
             try {
                 Result<Boolean> validationResult = sessionRepository.validateCode(
-                        currentAttendance.getSessionId(),
+                        attendance.getSessionId(),
                         code
                 );
 
@@ -568,7 +666,7 @@ public class DashboardActivity extends AppCompatActivity {
                 // If code is valid, proceed with face authentication
                 runOnUiThread(() -> {
                     dialog.dismiss();
-                    startFaceAuthentication(currentAttendance);
+                    startFaceAuthentication(attendance);
                 });
 
             } catch (Exception e) {
@@ -899,7 +997,8 @@ public class DashboardActivity extends AppCompatActivity {
         isAuthenticationSuccessful = false;
         isAuthenticating = false;
         isAuthInProgress = false;
-        currentAttendanceAttempt = 0;  // Reset attempt counter
+        isProximityValidated = false; // Reset proximity validation
+        currentAttendanceAttempt = 0;
         if (livenessDetector != null) {
             livenessDetector.reset();
         }
@@ -911,6 +1010,8 @@ public class DashboardActivity extends AppCompatActivity {
         if (cameraProvider != null) {
             cameraProvider.unbindAll();
         }
+        proximityBroadcaster.stopBroadcasting();
+        proximityBroadcaster.stopScanning();
         cameraExecutor.shutdown();
     }
 
@@ -957,5 +1058,69 @@ public class DashboardActivity extends AppCompatActivity {
         super.onPause();
         // Stop refresh when activity is not visible
         refreshHandler.removeCallbacks(refreshRunnable);
+        proximityBroadcaster.stopScanning(); // Stop scanning when activity is paused
+        isProximityValidated = false; // Reset the flag
+    }
+
+    private void checkFaceEnrollmentAndProceed(Attendance attendance) {
+        if (faceAuthenticationRepository == null) {
+            faceAuthenticationRepository = new FaceAuthenticationRepository(this);
+        }
+
+        new Thread(() -> {
+            Result<Boolean> hasEnrollment = faceAuthenticationRepository.hasFaceEnrolled(sessionManager.getUserId());
+
+            runOnUiThread(() -> {
+                if (!hasEnrollment.isSuccess() || !hasEnrollment.getData()) {
+                    Toast.makeText(this, "Face not enrolled. Please enroll face first.",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+
+                // Show OTP dialog
+                showOtpDialog(attendance);
+            });
+        }).start();
+    }
+
+    private void showOtpDialog(Attendance attendance) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Step 2: Enter Attendance Code");
+
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        input.setFilters(new InputFilter[] { new InputFilter.LengthFilter(6) });
+        input.setGravity(Gravity.CENTER);
+        input.setHint("Enter 6-digit code");
+
+        LinearLayout container = new LinearLayout(this);
+        container.setPadding(60, 40, 60, 20);
+        container.addView(input);
+        builder.setView(container);
+
+        builder.setPositiveButton("Submit", null);
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
+
+        AlertDialog dialog = builder.create();
+
+        dialog.setOnShowListener(dialogInterface -> {
+            Button submitButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            submitButton.setOnClickListener(view -> {
+                String code = input.getText().toString().trim();
+                if (!code.matches("\\d{6}")) {
+                    input.setError("Please enter a valid 6-digit code");
+                    return;
+                }
+
+                submitButton.setEnabled(false);
+                submitButton.setText("Verifying...");
+
+                validateCodeAndProceed(code, attendance, input, submitButton, dialog);
+            });
+        });
+
+        dialog.show();
+        input.requestFocus();
+        dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
     }
 }

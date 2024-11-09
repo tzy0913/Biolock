@@ -29,7 +29,7 @@ public class DatabaseHelper {
     private static final String DB_PASSWORD = "!Passw0rd";
 
     // SSH tunnel configuration
-    private static final String SSH_HOST = "115.66.101.36";
+    private static final String SSH_HOST = "192.168.1.118";
     private static final int SSH_PORT = 3307;
     private static final String SSH_USER = "biolock";
     private static final String SSH_PASSWORD = "!Passw0rd";
