@@ -159,6 +159,11 @@ public class DashboardActivity extends AppCompatActivity {
                 startActivity(new Intent(this, SettingsActivity.class)));
 
         findViewById(R.id.buttonLogout).setOnClickListener(v -> {
+            // Stop any active proximity broadcasting/scanning
+            proximityBroadcaster.stopBroadcasting();
+            proximityBroadcaster.stopScanning();
+
+            // Normal logout
             sessionManager.logoutUser();
             startActivity(new Intent(this, LoginActivity.class));
             finish();
