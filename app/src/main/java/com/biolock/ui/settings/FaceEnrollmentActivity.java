@@ -1,3 +1,7 @@
+/**
+ * Activity for handling face enrollment process with liveness detection and quality checks.
+ * Manages camera preview, face detection, and enrollment workflow.
+ */
 package com.biolock.ui.settings;
 
 import android.Manifest;
@@ -32,6 +36,7 @@ import com.biolock.repository.Result;
 import com.biolock.utils.FacePreprocessor;
 import com.biolock.utils.LivenessDetector;
 import com.biolock.utils.SessionManager;
+
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.face.Face;
@@ -44,6 +49,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class FaceEnrollmentActivity extends AppCompatActivity {
+    // Constants
     private static final String TAG = "FaceEnrollmentActivity";
     private static final int PERMISSION_REQUEST_CODE = 10;
     private static final String[] REQUIRED_PERMISSIONS = new String[]{Manifest.permission.CAMERA};
@@ -59,14 +65,15 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
     private ImageCapture imageCapture;
     private final ExecutorService cameraExecutor = Executors.newSingleThreadExecutor();
 
-    // Utility Components
+    // Dependencies
     private LivenessDetector livenessDetector;
     private SessionManager sessionManager;
     private FaceAuthenticationRepository faceAuthenticationRepository;
 
-    // State
+    // State Management
     private boolean livenessCheckPassed = false;
 
+    // Lifecycle Methods
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -81,10 +88,39 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
         }
     }
 
+    @Override
+    protected void onPause() {
+        super.onPause();
+        livenessDetector.reset();
+        livenessCheckPassed = false;
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        cameraExecutor.shutdown();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            if (allPermissionsGranted()) {
+                startCamera();
+            } else {
+                Toast.makeText(this, "Camera permissions are required",
+                        Toast.LENGTH_SHORT).show();
+                finish();
+            }
+        }
+    }
+
+    // Initialization Methods
     private void initializeComponents() {
         // Initialize UI components
         previewView = findViewById(R.id.previewView);
-        statusText = findViewById(R.id.statusText);
+        statusText = findViewById(R.id.statusTextView);
         captureButton = findViewById(R.id.captureButton);
         overlayView = findViewById(R.id.overlayView);
 
@@ -106,6 +142,7 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
         captureButton.setOnClickListener(v -> captureAndEnrollFace());
     }
 
+    // Camera Setup Methods
     private void startCamera() {
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
                 ProcessCameraProvider.getInstance(this);
@@ -183,6 +220,7 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
         }
     }
 
+    // Face Processing Methods
     private void processLivenessDetection(Face face) {
         if (!livenessCheckPassed) {
             LivenessDetector.LivenessResult result = livenessDetector.processFrame(face);
@@ -239,76 +277,7 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
                 new ImageCapture.OnImageCapturedCallback() {
                     @Override
                     public void onCaptureSuccess(@NonNull ImageProxy imageProxy) {
-                        try {
-                            Image image = imageProxy.getImage();
-                            if (image == null) {
-                                handleError("Failed to capture image", progressDialog);
-                                imageProxy.close();
-                                return;
-                            }
-
-                            final int rotation = imageProxy.getImageInfo().getRotationDegrees();
-                            InputImage inputImage = InputImage.fromMediaImage(image, rotation);
-
-                            faceDetector.process(inputImage)
-                                    .addOnSuccessListener(faces -> {
-                                        if (!faces.isEmpty()) {
-                                            Face detectedFace = faces.get(0);
-                                            new Thread(() -> {
-                                                try {
-                                                    Bitmap faceBitmap = FacePreprocessor.extractFace(
-                                                            image,
-                                                            detectedFace.getBoundingBox(),
-                                                            rotation
-                                                    );
-
-                                                    if (faceBitmap == null) {
-                                                        runOnUiThread(() ->
-                                                                handleError("Failed to process face image", progressDialog));
-                                                        return;
-                                                    }
-
-                                                    // Calculate confidence score here
-                                                    double confidenceScore = FacePreprocessor.calculateFaceConfidence(detectedFace);
-                                                    Log.d(TAG, "Face confidence score: " + confidenceScore);
-
-                                                    // Only proceed if confidence is above threshold
-                                                    if (confidenceScore < 0.4) { // Threshold now between 0-1
-                                                        runOnUiThread(() ->
-                                                                handleError("Face quality too low. Please try again with better lighting and positioning",
-                                                                        progressDialog));
-                                                        return;
-                                                    }
-
-                                                    Result<Boolean> result =
-                                                            faceAuthenticationRepository.enrollFace(userId, faceBitmap, confidenceScore);
-
-                                                    runOnUiThread(() -> handleEnrollmentResult(result, progressDialog));
-
-                                                } catch (Exception e) {
-                                                    Log.e(TAG, "Error processing face", e);
-                                                    runOnUiThread(() ->
-                                                            handleError("Error processing face: " + e.getMessage(),
-                                                                    progressDialog));
-                                                } finally {
-                                                    imageProxy.close();
-                                                }
-                                            }).start();
-                                        } else {
-                                            handleError("No face detected", progressDialog);
-                                            imageProxy.close();
-                                        }
-                                    })
-                                    .addOnFailureListener(e -> {
-                                        handleError("Face detection failed: " + e.getMessage(), progressDialog);
-                                        imageProxy.close();
-                                    });
-
-                        } catch (Exception e) {
-                            Log.e(TAG, "Error in capture process", e);
-                            handleError("Error capturing image: " + e.getMessage(), progressDialog);
-                            imageProxy.close();
-                        }
+                        processAndEnrollCapturedImage(imageProxy, userId, progressDialog);
                     }
 
                     @Override
@@ -319,6 +288,83 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
                 });
     }
 
+    private void processAndEnrollCapturedImage(ImageProxy imageProxy, Long userId, ProgressDialog progressDialog) {
+        try {
+            Image image = imageProxy.getImage();
+            if (image == null) {
+                handleError("Failed to capture image", progressDialog);
+                imageProxy.close();
+                return;
+            }
+
+            final int rotation = imageProxy.getImageInfo().getRotationDegrees();
+            InputImage inputImage = InputImage.fromMediaImage(image, rotation);
+
+            faceDetector.process(inputImage)
+                    .addOnSuccessListener(faces -> {
+                        if (!faces.isEmpty()) {
+                            Face detectedFace = faces.get(0);
+                            processDetectedFace(image, detectedFace, rotation, userId, progressDialog);
+                        } else {
+                            handleError("No face detected", progressDialog);
+                            imageProxy.close();
+                        }
+                    })
+                    .addOnFailureListener(e -> {
+                        handleError("Face detection failed: " + e.getMessage(), progressDialog);
+                        imageProxy.close();
+                    });
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error in capture process", e);
+            handleError("Error capturing image: " + e.getMessage(), progressDialog);
+            imageProxy.close();
+        }
+    }
+
+    private void processDetectedFace(Image image, Face detectedFace, int rotation,
+                                     Long userId, ProgressDialog progressDialog) {
+        new Thread(() -> {
+            try {
+                Bitmap faceBitmap = FacePreprocessor.extractFace(
+                        image,
+                        detectedFace.getBoundingBox(),
+                        rotation
+                );
+
+                if (faceBitmap == null) {
+                    runOnUiThread(() -> handleError("Failed to process face image", progressDialog));
+                    return;
+                }
+
+                double confidenceScore = FacePreprocessor.calculateFaceConfidence(detectedFace);
+                Log.d(TAG, "Face confidence score: " + confidenceScore);
+
+                if (confidenceScore < 0.4) {
+                    runOnUiThread(() -> handleError(
+                            "Face quality too low. Please try again with better lighting and positioning",
+                            progressDialog));
+                    return;
+                }
+
+                Result<Boolean> result = faceAuthenticationRepository.enrollFace(
+                        userId,
+                        faceBitmap,
+                        confidenceScore
+                );
+
+                runOnUiThread(() -> handleEnrollmentResult(result, progressDialog));
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error processing face", e);
+                runOnUiThread(() -> handleError(
+                        "Error processing face: " + e.getMessage(),
+                        progressDialog));
+            }
+        }).start();
+    }
+
+    // Result Handling Methods
     private void handleEnrollmentResult(Result<Boolean> result, ProgressDialog progressDialog) {
         runOnUiThread(() -> {
             progressDialog.dismiss();
@@ -346,6 +392,7 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
         });
     }
 
+    // UI Helper Methods
     private void updateStatus(String message) {
         runOnUiThread(() -> statusText.setText(message));
     }
@@ -358,6 +405,7 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
         runOnUiThread(() -> overlayView.setBackgroundResource(R.drawable.scanning_overlay));
     }
 
+    // Permission Helper Methods
     private boolean allPermissionsGranted() {
         for (String permission : REQUIRED_PERMISSIONS) {
             if (ContextCompat.checkSelfPermission(this, permission)
@@ -366,33 +414,5 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
             }
         }
         return true;
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
-                                           @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (allPermissionsGranted()) {
-                startCamera();
-            } else {
-                Toast.makeText(this, "Camera permissions are required",
-                        Toast.LENGTH_SHORT).show();
-                finish();
-            }
-        }
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        livenessDetector.reset();
-        livenessCheckPassed = false;
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        cameraExecutor.shutdown();
     }
 }

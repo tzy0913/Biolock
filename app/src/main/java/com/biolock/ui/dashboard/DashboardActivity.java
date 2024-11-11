@@ -1,3 +1,8 @@
+/**
+ * Main dashboard activity handling both instructor and student functionalities.
+ * Manages class schedules, attendance marking with face recognition and proximity validation,
+ * session management for instructors, and real-time updates.
+ */
 package com.biolock.ui.dashboard;
 
 import android.app.Activity;
@@ -7,6 +12,8 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.media.Image;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -25,16 +32,20 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
-
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.camera.core.CameraSelector;
+import androidx.camera.core.ImageAnalysis;
+import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
+import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
 import com.biolock.R;
 import com.biolock.model.Attendance;
 import com.biolock.model.CourseClass;
 import com.biolock.model.SecuritySettings;
+import com.biolock.model.User;
 import com.biolock.repository.AttendanceRepository;
 import com.biolock.repository.FaceAuthenticationRepository;
 import com.biolock.repository.Result;
@@ -48,33 +59,26 @@ import com.biolock.utils.LivenessDetector;
 import com.biolock.utils.ProximityBroadcaster;
 import com.biolock.utils.ProximityValidator;
 import com.biolock.utils.SessionManager;
-import com.biolock.model.User;
-import com.google.mlkit.vision.face.FaceDetector;
-
-import java.text.SimpleDateFormat;
-import java.util.Calendar;
-import java.util.List;
-import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
-import android.graphics.Bitmap;
-import android.media.Image;
-
-import androidx.camera.core.CameraSelector;
-import androidx.camera.core.ImageAnalysis;
-import androidx.camera.core.Preview;
-import androidx.camera.view.PreviewView;
-
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.face.Face;
 import com.google.mlkit.vision.face.FaceDetection;
+import com.google.mlkit.vision.face.FaceDetector;
 import com.google.mlkit.vision.face.FaceDetectorOptions;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class DashboardActivity extends AppCompatActivity {
+    // Constants
     private static final String TAG = "DashboardActivity";
+    private static final int REFRESH_INTERVAL = 30000; // 30 seconds
+
+    // UI Components
     private TextView textGreeting;
     private TextView textClassInfo;
     private Button buttonMarkAttendance;
@@ -83,49 +87,122 @@ public class DashboardActivity extends AppCompatActivity {
     private Button buttonStartSession;
     private Button buttonEndSession;
     private Button buttonViewClassAttendance;
-    private Button buttonAttendanceStatistics;
+
+    // Face Authentication UI
+    private View faceAuthLayout;
+    private PreviewView previewView;
+    private TextView statusText;
+    private View overlayView;
+
+    // Dependencies
     private AttendanceRepository attendanceRepository;
     private SessionRepository sessionRepository;
     private SessionManager sessionManager;
+    private UserRepository userRepository;
     private SimpleDateFormat timeFormat;
-    private List<Attendance> attendanceList;
-    private static final int REFRESH_INTERVAL = 30000; // 30 seconds
-    private Handler refreshHandler;
-    private Runnable refreshRunnable;
-    // Face Authentication components from LoginActivity
     private FaceAuthenticationRepository faceAuthenticationRepository;
     private LivenessDetector livenessDetector;
     private FaceDetector faceDetector;
     private ProcessCameraProvider cameraProvider;
     private final ExecutorService cameraExecutor = Executors.newSingleThreadExecutor();
+    private ProximityBroadcaster proximityBroadcaster;
+    private ActivityResultLauncher<Intent> bluetoothEnableLauncher;
 
-    // State Management for face auth
+    // State Management
+    private List<Attendance> attendanceList;
     private boolean livenessCheckPassed = false;
     private boolean isAuthenticationSuccessful = false;
     private boolean isAuthenticating = false;
     private boolean isAuthInProgress = false;
-    private View faceAuthLayout;
-    private PreviewView previewView;
-    private TextView statusText;
-    private View overlayView;
+    private boolean isProximityValidated = false;
     private int currentAttendanceAttempt = 0;
     private SecuritySettings securitySettings;
-    private UserRepository userRepository;
-    private ProximityBroadcaster proximityBroadcaster;
-    private ActivityResultLauncher<Intent> bluetoothEnableLauncher;
     private Attendance currentPendingAttendance;
-    private boolean isProximityValidated = false;
+    private Handler refreshHandler;
+    private Runnable refreshRunnable;
 
+    // Lifecycle Methods
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_dashboard);
-
         initializeViews();
         setupDashboard();
         setupRefreshHandler();
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        loadDashboardData(User.ROLE_INSTRUCTOR.equals(sessionManager.getUserRole()));
+        refreshHandler.postDelayed(refreshRunnable, REFRESH_INTERVAL);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        refreshHandler.removeCallbacks(refreshRunnable);
+        proximityBroadcaster.stopScanning();
+        isProximityValidated = false;
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (cameraProvider != null) {
+            cameraProvider.unbindAll();
+        }
+        proximityBroadcaster.stopBroadcasting();
+        proximityBroadcaster.stopScanning();
+        cameraExecutor.shutdown();
+    }
+
+    // Permission Handling Methods
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == ProximityValidator.PERMISSION_REQUEST_CODE) {
+            if (ProximityValidator.hasRequiredPermissions(this)) {
+                boolean isInstructor = User.ROLE_INSTRUCTOR.equals(sessionManager.getUserRole());
+                checkPermissionsAndStartProximity(isInstructor);
+            } else {
+                Toast.makeText(this,
+                        "Proximity validation requires all permissions to be granted",
+                        Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
+    private void checkPermissionsAndStartProximity(boolean isInstructor) {
+        if (!ProximityValidator.hasRequiredPermissions(this)) {
+            List<String> missingPermissions = ProximityValidator.getMissingPermissions(this);
+            requestPermissions(
+                    missingPermissions.toArray(new String[0]),
+                    ProximityValidator.PERMISSION_REQUEST_CODE
+            );
+            return;
+        }
+
+        if (!ProximityValidator.isBleSupported(this)) {
+            Toast.makeText(this,
+                    "This device doesn't support proximity validation",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        if (!ProximityValidator.isBluetoothEnabled(this)) {
+            showEnableProximityDialog();
+            return;
+        }
+
+        if (isInstructor) {
+            proceedWithStartSession();
+        } else {
+            proceedWithMarkAttendance();
+        }
+    }
+
+    // Initialization Methods
     private void initializeViews() {
         textGreeting = findViewById(R.id.textGreeting);
         textClassInfo = findViewById(R.id.textClassInfo);
@@ -135,7 +212,6 @@ public class DashboardActivity extends AppCompatActivity {
         buttonStartSession = findViewById(R.id.buttonStartSession);
         buttonEndSession = findViewById(R.id.buttonEndSession);
         buttonViewClassAttendance = findViewById(R.id.buttonViewClassAttendance);
-        buttonAttendanceStatistics = findViewById(R.id.buttonAttendanceStatistics);
 
         timeFormat = new SimpleDateFormat("h:mm a", Locale.getDefault());
         sessionManager = new SessionManager(this);
@@ -151,19 +227,14 @@ public class DashboardActivity extends AppCompatActivity {
         proximityBroadcaster = new ProximityBroadcaster(this);
         setupBluetoothLauncher();
 
-        // Set greeting
         textGreeting.setText(String.format("Hi, %s!", sessionManager.getUserName()));
 
-        // Common buttons
         findViewById(R.id.buttonSettings).setOnClickListener(v ->
                 startActivity(new Intent(this, SettingsActivity.class)));
 
         findViewById(R.id.buttonLogout).setOnClickListener(v -> {
-            // Stop any active proximity broadcasting/scanning
             proximityBroadcaster.stopBroadcasting();
             proximityBroadcaster.stopScanning();
-
-            // Normal logout
             sessionManager.logoutUser();
             startActivity(new Intent(this, LoginActivity.class));
             finish();
@@ -183,7 +254,6 @@ public class DashboardActivity extends AppCompatActivity {
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
                     if (result.getResultCode() == Activity.RESULT_OK) {
-                        // Check if this was for instructor or student
                         boolean isInstructor = User.ROLE_INSTRUCTOR.equals(sessionManager.getUserRole());
                         checkPermissionsAndStartProximity(isInstructor);
                     } else {
@@ -203,14 +273,10 @@ public class DashboardActivity extends AppCompatActivity {
     }
 
     private void setupViewVisibility(boolean isInstructor) {
-        // Student views
         buttonMarkAttendance.setVisibility(isInstructor ? View.GONE : View.VISIBLE);
         buttonViewAttendance.setVisibility(isInstructor ? View.GONE : View.VISIBLE);
-
-        // Instructor views
         sessionButtons.setVisibility(isInstructor ? View.VISIBLE : View.GONE);
         buttonViewClassAttendance.setVisibility(isInstructor ? View.VISIBLE : View.GONE);
-        buttonAttendanceStatistics.setVisibility(isInstructor ? View.VISIBLE : View.GONE);
     }
 
     private void setupClickListeners(boolean isInstructor) {
@@ -224,7 +290,6 @@ public class DashboardActivity extends AppCompatActivity {
                 startActivity(intent);
             });
 
-            // Add session button listeners
             buttonStartSession.setOnClickListener(v -> startSession());
             buttonEndSession.setOnClickListener(v -> showEndSessionDialog());
         } else {
@@ -234,6 +299,15 @@ public class DashboardActivity extends AppCompatActivity {
         }
     }
 
+    private void setupRefreshHandler() {
+        refreshHandler = new Handler();
+        refreshRunnable = () -> {
+            loadDashboardData(User.ROLE_INSTRUCTOR.equals(sessionManager.getUserRole()));
+            refreshHandler.postDelayed(refreshRunnable, REFRESH_INTERVAL);
+        };
+    }
+
+    // Dashboard Data Methods
     private void loadDashboardData(boolean isInstructor) {
         new Thread(() -> {
             try {
@@ -273,17 +347,14 @@ public class DashboardActivity extends AppCompatActivity {
             textClassInfo.setText(builder);
             buttonViewClassAttendance.setEnabled(true);
 
-            // Check if there's an ongoing session with validation code
             boolean isOngoing = "ONGOING".equals(currentClass.getStatus());
             boolean hasValidationCode = currentClass.getValidationCode() != null;
 
             if (isOngoing && hasValidationCode) {
-                // Session is active with code - need to restart beacon
                 proximityBroadcaster.startBroadcasting(currentClass.getSessionId());
                 buttonStartSession.setEnabled(false);
                 buttonEndSession.setEnabled(true);
             } else {
-                // No active session or no code yet
                 boolean canStart = isOngoing && !hasValidationCode;
                 buttonStartSession.setEnabled(canStart);
                 buttonEndSession.setEnabled(false);
@@ -291,6 +362,67 @@ public class DashboardActivity extends AppCompatActivity {
         });
     }
 
+    private void handleStudentData(List<Attendance> attendances) {
+        runOnUiThread(() -> {
+            this.attendanceList = attendances;
+            Attendance currentAttendance = findCurrentOrUpcomingClass(attendances);
+            if (currentAttendance == null) {
+                showNoClasses();
+                return;
+            }
+
+            SpannableStringBuilder builder = new SpannableStringBuilder();
+            appendClassInfo(builder, currentAttendance);
+            appendAttendanceStatus(builder, currentAttendance.getStatus());
+            textClassInfo.setText(builder);
+
+            boolean isOngoing = "ONGOING".equals(currentAttendance.getStatus());
+            boolean hasCode = currentAttendance.getValidationCode() != null;
+            boolean notMarked = currentAttendance.getAttendanceId() == null ||
+                    currentAttendance.getAttendanceId() == 0;
+
+            Log.d(TAG, "Current Status: " + currentAttendance.getStatus());
+            Log.d(TAG, "Validation Code: " + currentAttendance.getValidationCode());
+            Log.d(TAG, "Attendance ID: " + currentAttendance.getAttendanceId());
+            Log.d(TAG, "isOngoing: " + isOngoing);
+            Log.d(TAG, "hasCode: " + hasCode);
+            Log.d(TAG, "notMarked: " + notMarked);
+
+            buttonMarkAttendance.setEnabled(isOngoing && hasCode && notMarked);
+            buttonMarkAttendance.setText("Mark Attendance");
+        });
+    }
+
+    private <T> T findCurrentOrUpcomingClass(List<T> classes) {
+        if (classes == null || classes.isEmpty()) return null;
+
+        Calendar now = Calendar.getInstance();
+
+        for (T classObj : classes) {
+            Calendar endTime = Calendar.getInstance();
+
+            if (classObj instanceof Attendance) {
+                Attendance attendance = (Attendance) classObj;
+                endTime.setTime(attendance.getSessionDate());
+                endTime.set(Calendar.HOUR_OF_DAY, attendance.getEndTime().getHours());
+                endTime.set(Calendar.MINUTE, attendance.getEndTime().getMinutes());
+            } else if (classObj instanceof CourseClass) {
+                CourseClass courseClass = (CourseClass) classObj;
+                endTime.setTime(courseClass.getSessionDate());
+                endTime.set(Calendar.HOUR_OF_DAY, courseClass.getEndTime().getHours());
+                endTime.set(Calendar.MINUTE, courseClass.getEndTime().getMinutes());
+            } else {
+                continue;
+            }
+
+            if (endTime.after(now)) {
+                return classObj;
+            }
+        }
+        return null;
+    }
+
+    // Session Management Methods
     private void startSession() {
         CourseClass currentClass = CourseClass.getCurrentClass();
         if (currentClass == null || currentClass.getSessionId() == null) {
@@ -299,36 +431,6 @@ public class DashboardActivity extends AppCompatActivity {
         }
 
         checkPermissionsAndStartProximity(true);
-    }
-
-    private void checkPermissionsAndStartProximity(boolean isInstructor) {
-        if (!ProximityValidator.hasRequiredPermissions(this)) {
-            List<String> missingPermissions = ProximityValidator.getMissingPermissions(this);
-            requestPermissions(
-                    missingPermissions.toArray(new String[0]),
-                    ProximityValidator.PERMISSION_REQUEST_CODE
-            );
-            return;
-        }
-
-        if (!ProximityValidator.isBleSupported(this)) {
-            Toast.makeText(this,
-                    "This device doesn't support proximity validation",
-                    Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        if (!ProximityValidator.isBluetoothEnabled(this)) {
-            showEnableProximityDialog();
-            return;
-        }
-
-        // If all checks pass, proceed with operation
-        if (isInstructor) {
-            proceedWithStartSession();
-        } else {
-            proceedWithMarkAttendance();
-        }
     }
 
     private void proceedWithStartSession() {
@@ -342,7 +444,7 @@ public class DashboardActivity extends AppCompatActivity {
             Result<String> result = sessionRepository.startSession(currentClass.getSessionId());
             runOnUiThread(() -> {
                 if (result.isSuccess()) {
-                    proximityBroadcaster.startBroadcasting(currentClass.getSessionId()); // This now accepts Long
+                    proximityBroadcaster.startBroadcasting(currentClass.getSessionId());
                     showSessionCodeDialog(result.getData());
                     buttonStartSession.setEnabled(false);
                     buttonEndSession.setEnabled(true);
@@ -352,107 +454,6 @@ public class DashboardActivity extends AppCompatActivity {
                 }
             });
         }).start();
-    }
-
-    private void showEnableProximityDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("Proximity Validation Required")
-                .setMessage("Proximity validation requires Bluetooth. Would you like to enable it now?")
-                .setPositiveButton("Enable", (dialog, which) -> {
-                    Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-                    bluetoothEnableLauncher.launch(enableBtIntent);
-                })
-                .setNegativeButton("Cancel", (dialog, which) ->
-                        Toast.makeText(this,
-                                "Proximity validation requires Bluetooth to be enabled",
-                                Toast.LENGTH_LONG).show())
-                .setCancelable(false)
-                .show();
-    }
-
-    private void proceedWithMarkAttendance() {
-        if (currentPendingAttendance == null) {
-            Toast.makeText(this, "Session information not found", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        if (isProximityValidated) {
-            return; // Skip if already validated
-        }
-
-        proximityBroadcaster.setProximityListener(new ProximityBroadcaster.ProximityListener() {
-            @Override
-            public void onProximityDetected(Long sessionId) {
-                if (isProximityValidated) return; // Skip if already validated
-
-                if (sessionId.equals(currentPendingAttendance.getSessionId())) {
-                    isProximityValidated = true;
-                    proximityBroadcaster.stopScanning(); // Stop scanning immediately
-
-                    runOnUiThread(() -> {
-                        Toast.makeText(DashboardActivity.this,
-                                "Proximity validation successful",
-                                Toast.LENGTH_SHORT).show();
-                        checkFaceEnrollmentAndProceed(currentPendingAttendance);
-                    });
-                }
-            }
-
-            @Override
-            public void onProximityTimeout() {
-                if (isProximityValidated) return;
-
-                runOnUiThread(() -> {
-                    Toast.makeText(DashboardActivity.this,
-                            "Could not validate proximity. Please ensure you are in the classroom.",
-                            Toast.LENGTH_LONG).show();
-                });
-                isProximityValidated = false; // Reset flag on timeout
-            }
-
-            @Override
-            public void onProximityError(String error) {
-                if (isProximityValidated) return;
-
-                runOnUiThread(() -> {
-                    Toast.makeText(DashboardActivity.this,
-                            "Proximity validation error: " + error,
-                            Toast.LENGTH_LONG).show();
-                });
-                isProximityValidated = false; // Reset flag on error
-            }
-        });
-
-        proximityBroadcaster.startScanning();
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == ProximityValidator.PERMISSION_REQUEST_CODE) {
-            if (ProximityValidator.hasRequiredPermissions(this)) {
-                boolean isInstructor = User.ROLE_INSTRUCTOR.equals(sessionManager.getUserRole());
-                checkPermissionsAndStartProximity(isInstructor);
-            } else {
-                Toast.makeText(this,
-                        "Proximity validation requires all permissions to be granted",
-                        Toast.LENGTH_LONG).show();
-            }
-        }
-    }
-
-    private void showSessionCodeDialog(String code) {
-        new AlertDialog.Builder(this)
-                .setTitle("Session Started")
-                .setMessage(String.format("Share this code with your students:\n\n%s", code))
-                .setPositiveButton("Copy Code", (dialog, which) -> {
-                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                    ClipData clip = ClipData.newPlainText("Session Code", code);
-                    clipboard.setPrimaryClip(clip);
-                    Toast.makeText(this, "Code copied to clipboard", Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton("Close", null)
-                .show();
     }
 
     private void showEndSessionDialog() {
@@ -487,72 +488,420 @@ public class DashboardActivity extends AppCompatActivity {
         }).start();
     }
 
-    private void handleStudentData(List<Attendance> attendances) {
-        runOnUiThread(() -> {
-            this.attendanceList = attendances;
-            Attendance currentAttendance = findCurrentOrUpcomingClass(attendances);
-            if (currentAttendance == null) {
-                showNoClasses();
+    // Attendance Marking Methods
+    private void markAttendance() {
+        Attendance currentAttendance = findCurrentOrUpcomingClass(attendanceList);
+        if (currentAttendance == null || currentAttendance.getSessionId() == null) {
+            Toast.makeText(this, "No active session found", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        isProximityValidated = false;
+        currentPendingAttendance = currentAttendance;
+        checkPermissionsAndStartProximity(false);
+    }
+
+    private void proceedWithMarkAttendance() {
+        if (currentPendingAttendance == null) {
+            Toast.makeText(this, "Session information not found", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (isProximityValidated) {
+            return;
+        }
+
+        proximityBroadcaster.setProximityListener(new ProximityBroadcaster.ProximityListener() {
+            @Override
+            public void onProximityDetected(Long sessionId) {
+                if (isProximityValidated) return;
+
+                if (sessionId.equals(currentPendingAttendance.getSessionId())) {
+                    isProximityValidated = true;
+                    proximityBroadcaster.stopScanning();
+
+                    runOnUiThread(() -> {
+                        Toast.makeText(DashboardActivity.this,
+                                "Proximity validation successful",
+                                Toast.LENGTH_SHORT).show();
+                        checkFaceEnrollmentAndProceed(currentPendingAttendance);
+                    });
+                }
+            }
+
+            @Override
+            public void onProximityTimeout() {
+                if (isProximityValidated) return;
+
+                runOnUiThread(() -> {
+                    Toast.makeText(DashboardActivity.this,
+                            "Could not validate proximity. Please ensure you are in the classroom.",
+                            Toast.LENGTH_LONG).show();
+                });
+                isProximityValidated = false;
+            }
+
+            @Override
+            public void onProximityError(String error) {
+                if (isProximityValidated) return;
+
+                runOnUiThread(() -> {
+                    Toast.makeText(DashboardActivity.this,
+                            "Proximity validation error: " + error,
+                            Toast.LENGTH_LONG).show();
+                });
+                isProximityValidated = false;
+            }
+        });
+
+        proximityBroadcaster.startScanning();
+    }
+
+    // Face Authentication Methods
+    private void checkFaceEnrollmentAndProceed(Attendance attendance) {
+        if (faceAuthenticationRepository == null) {
+            faceAuthenticationRepository = new FaceAuthenticationRepository(this);
+        }
+
+        new Thread(() -> {
+            Result<Boolean> hasEnrollment = faceAuthenticationRepository.hasFaceEnrolled(sessionManager.getUserId());
+
+            runOnUiThread(() -> {
+                if (!hasEnrollment.isSuccess() || !hasEnrollment.getData()) {
+                    Toast.makeText(this, "Face not enrolled. Please enroll face first.",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+                showOtpDialog(attendance);
+            });
+        }).start();
+    }
+
+    private void startFaceAuthentication(Attendance currentAttendance) {
+        if (faceAuthenticationRepository == null) {
+            faceAuthenticationRepository = new FaceAuthenticationRepository(this);
+        }
+
+        if (livenessDetector == null) {
+            livenessDetector = new LivenessDetector();
+        }
+
+        if (faceDetector == null) {
+            FaceDetectorOptions options = new FaceDetectorOptions.Builder()
+                    .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+                    .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
+                    .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
+                    .build();
+            faceDetector = FaceDetection.getClient(options);
+        }
+
+        new Thread(() -> {
+            Result<SecuritySettings> settingsResult = userRepository.getSecuritySettings(sessionManager.getUserId());
+
+            runOnUiThread(() -> {
+                if (settingsResult.isSuccess()) {
+                    securitySettings = settingsResult.getData();
+                } else {
+                    securitySettings = new SecuritySettings();
+                    securitySettings.setMaxFailedAttempts(3);
+                }
+
+                faceAuthLayout.setVisibility(View.VISIBLE);
+                startFaceAuthCamera(previewView, statusText, overlayView, currentAttendance);
+            });
+        }).start();
+    }
+
+    private void startFaceAuthCamera(PreviewView previewView, TextView statusText,
+                                     View overlayView, Attendance attendance) {
+        ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
+                ProcessCameraProvider.getInstance(this);
+
+        cameraProviderFuture.addListener(() -> {
+            try {
+                ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
+                bindFaceAuthCamera(cameraProvider, previewView, statusText, overlayView, attendance);
+            } catch (ExecutionException | InterruptedException e) {
+                Log.e(TAG, "Error starting camera", e);
+                Toast.makeText(this, "Error starting camera: " + e.getMessage(),
+                        Toast.LENGTH_SHORT).show();
+            }
+        }, ContextCompat.getMainExecutor(this));
+    }
+
+    private void bindFaceAuthCamera(ProcessCameraProvider cameraProvider,
+                                    PreviewView previewView,
+                                    TextView statusText,
+                                    View overlayView,
+                                    Attendance attendance) {
+        this.cameraProvider = cameraProvider;
+        Preview preview = new Preview.Builder().build();
+
+        CameraSelector cameraSelector = new CameraSelector.Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
+                .build();
+
+        ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build();
+
+        imageAnalysis.setAnalyzer(cameraExecutor, image -> {
+            if (isAuthenticationSuccessful) {
+                image.close();
                 return;
             }
 
-            SpannableStringBuilder builder = new SpannableStringBuilder();
-            appendClassInfo(builder, currentAttendance);
-            appendAttendanceStatus(builder, currentAttendance.getStatus());
-            textClassInfo.setText(builder);
+            Image mediaImage = image.getImage();
+            if (mediaImage != null) {
+                InputImage inputImage = InputImage.fromMediaImage(
+                        mediaImage,
+                        image.getImageInfo().getRotationDegrees()
+                );
 
-            // Can mark if:
-            // 1. Class is ONGOING
-            // 2. Has validation code
-            // 3. No actual attendance record yet (attendance ID should be 0 or null)
-            boolean isOngoing = "ONGOING".equals(currentAttendance.getStatus());
-            boolean hasCode = currentAttendance.getValidationCode() != null;
-            boolean notMarked = currentAttendance.getAttendanceId() == null ||
-                    currentAttendance.getAttendanceId() == 0;
+                faceDetector.process(inputImage)
+                        .addOnSuccessListener(faces -> {
+                            if (faces.isEmpty()) {
+                                updateStatus("No face detected", statusText);
+                                setNormalOverlay(overlayView);
+                            } else if (faces.size() > 1) {
+                                updateStatus("Multiple faces detected", statusText);
+                                setNormalOverlay(overlayView);
+                            } else {
+                                Face face = faces.get(0);
+                                processAttendanceLivenessAndAuth(face, mediaImage,
+                                        image.getImageInfo().getRotationDegrees(),
+                                        statusText, overlayView, attendance);
+                            }
+                            image.close();
+                        })
+                        .addOnFailureListener(e -> {
+                            updateStatus("Detection failed", statusText);
+                            setNormalOverlay(overlayView);
+                            image.close();
+                        });
+            } else {
+                image.close();
+            }
+        });
 
-            Log.d(TAG, "Current Status: " + currentAttendance.getStatus());
-            Log.d(TAG, "Validation Code: " + currentAttendance.getValidationCode());
-            Log.d(TAG, "Attendance ID: " + currentAttendance.getAttendanceId());
-            Log.d(TAG, "isOngoing: " + isOngoing);
-            Log.d(TAG, "hasCode: " + hasCode);
-            Log.d(TAG, "notMarked: " + notMarked);
+        try {
+            cameraProvider.unbindAll();
+            cameraProvider.bindToLifecycle(
+                    this,
+                    cameraSelector,
+                    preview,
+                    imageAnalysis
+            );
+            preview.setSurfaceProvider(previewView.getSurfaceProvider());
+        } catch (Exception e) {
+            Log.e(TAG, "Error binding camera uses cases", e);
+            Toast.makeText(this, "Error starting camera", Toast.LENGTH_SHORT).show();
+        }
+    }
 
-            buttonMarkAttendance.setEnabled(isOngoing && hasCode && notMarked);
-            buttonMarkAttendance.setText("Mark Attendance");
+    private void validateCodeAndProceed(String code, Attendance attendance,
+                                        EditText input, Button submitButton, AlertDialog dialog) {
+        new Thread(() -> {
+            try {
+                Result<Boolean> validationResult = sessionRepository.validateCode(
+                        attendance.getSessionId(),
+                        code
+                );
+
+                if (!validationResult.isSuccess() || !validationResult.getData()) {
+                    showError("Invalid code. Please try again.", input, submitButton);
+                    return;
+                }
+
+                runOnUiThread(() -> {
+                    dialog.dismiss();
+                    startFaceAuthentication(attendance);
+                });
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error in code validation", e);
+                showError("An error occurred. Please try again.", input, submitButton);
+            }
+        }).start();
+    }
+
+    private void processAttendanceLivenessAndAuth(Face face, Image image, int rotation,
+                                                  TextView statusText, View overlayView,
+                                                  Attendance attendance) {
+        if (isAuthenticationSuccessful || isAuthInProgress) {
+            return;
+        }
+
+        checkFaceQuality(face, statusText, overlayView);
+
+        if (!isAuthenticating) {
+            return;
+        }
+
+        if (!livenessCheckPassed) {
+            LivenessDetector.LivenessResult result = livenessDetector.processFrame(face);
+            updateStatus(result.message, statusText);
+
+            if (result.state == LivenessDetector.LivenessState.COMPLETED) {
+                livenessCheckPassed = true;
+                setScanningOverlay(overlayView);
+                updateStatus("Verifying identity...", statusText);
+
+                Bitmap faceBitmap = FacePreprocessor.extractFace(image, face.getBoundingBox(), rotation);
+                if (faceBitmap != null && !isAuthInProgress) {
+                    isAuthInProgress = true;
+                    authenticateAndMarkAttendance(faceBitmap, statusText, attendance);
+                }
+            } else {
+                setNormalOverlay(overlayView);
+            }
+        }
+    }
+
+    private void checkFaceQuality(Face face, TextView statusText, View overlayView) {
+        float rotY = face.getHeadEulerAngleY();
+        float rotZ = face.getHeadEulerAngleZ();
+
+        if (Math.abs(rotY) < 15 && Math.abs(rotZ) < 15) {
+            setScanningOverlay(overlayView);
+            isAuthenticating = true;
+        } else {
+            isAuthenticating = false;
+            setNormalOverlay(overlayView);
+            StringBuilder guidance = new StringBuilder("Please ");
+            if (Math.abs(rotY) >= 15) {
+                guidance.append("face the camera directly");
+            }
+            if (Math.abs(rotZ) >= 15) {
+                if (guidance.length() > 7) guidance.append(" and ");
+                guidance.append("keep your head level");
+            }
+            updateStatus(guidance.toString(), statusText);
+        }
+    }
+
+    private void authenticateAndMarkAttendance(Bitmap faceBitmap, TextView statusText, Attendance attendance) {
+        Long userId = sessionManager.getUserId();
+        if (userId == null || isAuthenticationSuccessful) {
+            isAuthInProgress = false;
+            return;
+        }
+
+        currentAttendanceAttempt++;
+
+        new Thread(() -> {
+            try {
+                Thread.sleep(800);
+
+                Result<Boolean> authResult = faceAuthenticationRepository.authenticate(
+                        userId,
+                        faceBitmap,
+                        FaceAuthenticationRepository.AuthPurpose.ATTENDANCE
+                );
+
+                if (!authResult.isSuccess() || !authResult.getData()) {
+                    handleFailedAuthentication(statusText);
+                    return;
+                }
+
+                Result<Void> markResult = attendanceRepository.markAttendance(
+                        userId,
+                        attendance.getSessionId()
+                );
+
+                if (!markResult.isSuccess()) {
+                    handleFailedAttendanceMarking();
+                    return;
+                }
+
+                handleSuccessfulAttendance(statusText);
+
+            } catch (Exception e) {
+                handleAuthenticationError(e);
+            }
+        }).start();
+    }
+
+    private void handleFailedAuthentication(TextView statusText) {
+        int maxAttempts = securitySettings != null ? securitySettings.getMaxFailedAttempts() : 3;
+
+        runOnUiThread(() -> {
+            String failMessage = String.format("Authentication failed (%d/%d)\nPlease try again",
+                    currentAttendanceAttempt, maxAttempts);
+            updateStatus(failMessage, statusText);
+
+            if (currentAttendanceAttempt >= maxAttempts) {
+                handleMaxAttemptsReached();
+            } else {
+                livenessCheckPassed = false;
+                isAuthenticating = false;
+            }
+        });
+
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            isAuthInProgress = false;
+        }, 2000);
+    }
+
+    private void handleMaxAttemptsReached() {
+        isAuthenticating = false;
+        updateStatus("Max attempts reached", statusText);
+        setNormalOverlay(overlayView);
+
+        Toast.makeText(this, "Too many failed attempts. Please try again later.",
+                Toast.LENGTH_LONG).show();
+
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            faceAuthLayout.setVisibility(View.GONE);
+            if (cameraProvider != null) {
+                cameraProvider.unbindAll();
+            }
+            resetFaceAuthState();
+        }, 2000);
+    }
+
+    private void handleFailedAttendanceMarking() {
+        showError("Failed to mark attendance. Please try again.");
+        runOnUiThread(() -> {
+            faceAuthLayout.setVisibility(View.GONE);
+            if (cameraProvider != null) {
+                cameraProvider.unbindAll();
+            }
         });
     }
 
-    private <T> T findCurrentOrUpcomingClass(List<T> classes) {
-        if (classes == null || classes.isEmpty()) return null;
-
-        Calendar now = Calendar.getInstance();
-
-        for (T classObj : classes) {
-            // Create calendar for class end time with proper date
-            Calendar endTime = Calendar.getInstance();
-
-            if (classObj instanceof Attendance) {
-                Attendance attendance = (Attendance) classObj;
-                endTime.setTime(attendance.getSessionDate());
-                endTime.set(Calendar.HOUR_OF_DAY, attendance.getEndTime().getHours());
-                endTime.set(Calendar.MINUTE, attendance.getEndTime().getMinutes());
-            } else if (classObj instanceof CourseClass) {
-                CourseClass courseClass = (CourseClass) classObj;
-                endTime.setTime(courseClass.getSessionDate());
-                endTime.set(Calendar.HOUR_OF_DAY, courseClass.getEndTime().getHours());
-                endTime.set(Calendar.MINUTE, courseClass.getEndTime().getMinutes());
-            } else {
-                continue; // Skip unknown types
-            }
-
-            // If class is current or upcoming (hasn't ended yet including buffer)
-            if (endTime.after(now)) {
-                return classObj;
-            }
-        }
-        return null;
+    private void handleSuccessfulAttendance(TextView statusText) {
+        isAuthenticationSuccessful = true;
+        runOnUiThread(() -> {
+            updateStatus("Authentication successful!", statusText);
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                faceAuthLayout.setVisibility(View.GONE);
+                if (cameraProvider != null) {
+                    cameraProvider.unbindAll();
+                }
+                Toast.makeText(DashboardActivity.this,
+                        "Attendance marked successfully!", Toast.LENGTH_LONG).show();
+                loadDashboardData(false);
+            }, 2000);
+        });
     }
 
+    private void handleAuthenticationError(Exception e) {
+        Log.e(TAG, "Authentication error", e);
+        showError("Authentication error: " + e.getMessage());
+        runOnUiThread(() -> {
+            isAuthenticating = false;
+            livenessCheckPassed = false;
+            faceAuthLayout.setVisibility(View.GONE);
+            if (cameraProvider != null) {
+                cameraProvider.unbindAll();
+            }
+            resetFaceAuthState();
+        });
+        isAuthInProgress = false;
+    }
+
+    // UI Helper Methods
     private void appendClassInfo(SpannableStringBuilder builder, CourseClass courseClass) {
         builder.append(courseClass.getModuleCode()).append("\n");
         builder.append(courseClass.getModuleName()).append("\n");
@@ -568,7 +917,6 @@ public class DashboardActivity extends AppCompatActivity {
             )).append("\n");
         }
 
-        // Add status with color
         builder.append("Status: ");
         String statusText = courseClass.getStatus() != null ? courseClass.getStatus() : "NOT MARKED";
         SpannableString spannable = new SpannableString(statusText);
@@ -642,101 +990,6 @@ public class DashboardActivity extends AppCompatActivity {
         builder.append(spannable);
     }
 
-    private void markAttendance() {
-        Attendance currentAttendance = findCurrentOrUpcomingClass(attendanceList);
-        if (currentAttendance == null || currentAttendance.getSessionId() == null) {
-            Toast.makeText(this, "No active session found", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        isProximityValidated = false; // Reset the flag when starting new attendance
-        currentPendingAttendance = currentAttendance;
-        checkPermissionsAndStartProximity(false);
-    }
-
-    private void validateCodeAndProceed(String code, Attendance attendance,
-                                        EditText input, Button submitButton, AlertDialog dialog) {
-        new Thread(() -> {
-            try {
-                Result<Boolean> validationResult = sessionRepository.validateCode(
-                        attendance.getSessionId(),
-                        code
-                );
-
-                if (!validationResult.isSuccess() || !validationResult.getData()) {
-                    showError("Invalid code. Please try again.", input, submitButton);
-                    return;
-                }
-
-                // If code is valid, proceed with face authentication
-                runOnUiThread(() -> {
-                    dialog.dismiss();
-                    startFaceAuthentication(attendance);
-                });
-
-            } catch (Exception e) {
-                Log.e(TAG, "Error in code validation", e);
-                showError("An error occurred. Please try again.", input, submitButton);
-            }
-        }).start();
-    }
-
-    private void startFaceAuthentication(Attendance currentAttendance) {
-        // Initialize face authentication components if needed
-        if (faceAuthenticationRepository == null) {
-            faceAuthenticationRepository = new FaceAuthenticationRepository(this);
-        }
-
-        // Initialize liveness detector if needed
-        if (livenessDetector == null) {
-            livenessDetector = new LivenessDetector();
-        }
-
-        // Initialize ML Kit face detector if needed
-        if (faceDetector == null) {
-            FaceDetectorOptions options = new FaceDetectorOptions.Builder()
-                    .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
-                    .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
-                    .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
-                    .build();
-            faceDetector = FaceDetection.getClient(options);
-        }
-
-        // Get security settings before starting camera
-        new Thread(() -> {
-            Result<SecuritySettings> settingsResult = userRepository.getSecuritySettings(sessionManager.getUserId());
-
-            runOnUiThread(() -> {
-                if (settingsResult.isSuccess()) {
-                    securitySettings = settingsResult.getData();
-                } else {
-                    securitySettings = new SecuritySettings();
-                    securitySettings.setMaxFailedAttempts(3);
-                }
-
-                faceAuthLayout.setVisibility(View.VISIBLE);
-                startFaceAuthCamera(previewView, statusText, overlayView, currentAttendance);
-            });
-        }).start();
-    }
-
-    private void startFaceAuthCamera(PreviewView previewView, TextView statusText,
-                                     View overlayView, Attendance attendance) {
-        ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
-                ProcessCameraProvider.getInstance(this);
-
-        cameraProviderFuture.addListener(() -> {
-            try {
-                ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
-                bindFaceAuthCamera(cameraProvider, previewView, statusText, overlayView, attendance);
-            } catch (ExecutionException | InterruptedException e) {
-                Log.e(TAG, "Error starting camera", e);
-                Toast.makeText(this, "Error starting camera: " + e.getMessage(),
-                        Toast.LENGTH_SHORT).show();
-            }
-        }, ContextCompat.getMainExecutor(this));
-    }
-
     private void showNoClasses() {
         textClassInfo.setText("No classes scheduled for today");
         buttonMarkAttendance.setEnabled(false);
@@ -744,348 +997,18 @@ public class DashboardActivity extends AppCompatActivity {
         buttonEndSession.setEnabled(false);
     }
 
-    private void bindFaceAuthCamera(ProcessCameraProvider cameraProvider,
-                                    PreviewView previewView,
-                                    TextView statusText,
-                                    View overlayView,
-                                    Attendance attendance) {
-        this.cameraProvider = cameraProvider;
-        Preview preview = new Preview.Builder().build();
-
-        CameraSelector cameraSelector = new CameraSelector.Builder()
-                .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
-                .build();
-
-        ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build();
-
-        imageAnalysis.setAnalyzer(cameraExecutor, image -> {
-            if (isAuthenticationSuccessful) {
-                image.close();
-                return;
-            }
-
-            Image mediaImage = image.getImage();
-            if (mediaImage != null) {
-                InputImage inputImage = InputImage.fromMediaImage(
-                        mediaImage,
-                        image.getImageInfo().getRotationDegrees()
-                );
-
-                faceDetector.process(inputImage)
-                        .addOnSuccessListener(faces -> {
-                            if (faces.isEmpty()) {
-                                updateStatus("No face detected", statusText);
-                                setNormalOverlay(overlayView);
-                            } else if (faces.size() > 1) {
-                                updateStatus("Multiple faces detected", statusText);
-                                setNormalOverlay(overlayView);
-                            } else {
-                                Face face = faces.get(0);
-                                processAttendanceLivenessAndAuth(face, mediaImage,
-                                        image.getImageInfo().getRotationDegrees(),
-                                        statusText, overlayView, attendance);
-                            }
-                            image.close();
-                        })
-                        .addOnFailureListener(e -> {
-                            updateStatus("Detection failed", statusText);
-                            setNormalOverlay(overlayView);
-                            image.close();
-                        });
-            } else {
-                image.close();
-            }
-        });
-
-        try {
-            cameraProvider.unbindAll();
-            cameraProvider.bindToLifecycle(
-                    this,
-                    cameraSelector,
-                    preview,
-                    imageAnalysis
-            );
-            preview.setSurfaceProvider(previewView.getSurfaceProvider());
-        } catch (Exception e) {
-            Log.e(TAG, "Error binding camera uses cases", e);
-            Toast.makeText(this, "Error starting camera", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private void processAttendanceLivenessAndAuth(Face face, Image image, int rotation,
-                                                  TextView statusText, View overlayView,
-                                                  Attendance attendance) {
-        if (isAuthenticationSuccessful || isAuthInProgress) {
-            return;
-        }
-
-        checkFaceQuality(face, statusText, overlayView);
-
-        if (!isAuthenticating) {
-            return;
-        }
-
-        if (!livenessCheckPassed) {
-            LivenessDetector.LivenessResult result = livenessDetector.processFrame(face);
-            updateStatus(result.message, statusText);
-
-            if (result.state == LivenessDetector.LivenessState.COMPLETED) {
-                livenessCheckPassed = true;
-                setScanningOverlay(overlayView);
-                updateStatus("Verifying identity...", statusText);
-
-                Bitmap faceBitmap = FacePreprocessor.extractFace(image, face.getBoundingBox(), rotation);
-                if (faceBitmap != null && !isAuthInProgress) {
-                    isAuthInProgress = true;
-                    authenticateAndMarkAttendance(faceBitmap, statusText, attendance);
-                }
-            } else {
-                setNormalOverlay(overlayView);
-            }
-        }
-    }
-
-    private void checkFaceQuality(Face face, TextView statusText, View overlayView) {
-        float rotY = face.getHeadEulerAngleY();  // Head rotation Y (left/right)
-        float rotZ = face.getHeadEulerAngleZ();  // Head rotation Z (tilt)
-
-        if (Math.abs(rotY) < 15 && Math.abs(rotZ) < 15) {
-            setScanningOverlay(overlayView);
-            isAuthenticating = true;
-        } else {
-            isAuthenticating = false;
-            setNormalOverlay(overlayView);
-            StringBuilder guidance = new StringBuilder("Please ");
-            if (Math.abs(rotY) >= 15) {
-                guidance.append("face the camera directly");
-            }
-            if (Math.abs(rotZ) >= 15) {
-                if (guidance.length() > 7) guidance.append(" and ");
-                guidance.append("keep your head level");
-            }
-            updateStatus(guidance.toString(), statusText);
-        }
-    }
-
-    private void authenticateAndMarkAttendance(Bitmap faceBitmap, TextView statusText, Attendance attendance) {
-        Long userId = sessionManager.getUserId();
-        if (userId == null || isAuthenticationSuccessful) {
-            isAuthInProgress = false;
-            return;
-        }
-
-        currentAttendanceAttempt++;
-
-        new Thread(() -> {
-            try {
-                Thread.sleep(800); // Show "Verifying..." message
-
-                Result<Boolean> authResult = faceAuthenticationRepository.authenticate(
-                        userId,
-                        faceBitmap,
-                        FaceAuthenticationRepository.AuthPurpose.ATTENDANCE
-                );
-
-                if (!authResult.isSuccess() || !authResult.getData()) {
-                    int maxAttempts = securitySettings != null ?
-                            securitySettings.getMaxFailedAttempts() : 3;
-
-                    runOnUiThread(() -> {
-                        String failMessage = String.format("Authentication failed (%d/%d)\nPlease try again",
-                                currentAttendanceAttempt, maxAttempts);
-                        updateStatus(failMessage, statusText);
-
-                        if (currentAttendanceAttempt >= maxAttempts) {
-                            isAuthenticating = false;
-                            updateStatus("Max attempts reached", statusText);
-                            setNormalOverlay(overlayView);
-
-                            Toast.makeText(DashboardActivity.this,
-                                    "Too many failed attempts. Please try again later.",
-                                    Toast.LENGTH_LONG).show();
-
-                            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                                faceAuthLayout.setVisibility(View.GONE);
-                                if (cameraProvider != null) {
-                                    cameraProvider.unbindAll();
-                                }
-                                resetFaceAuthState();
-                            }, 2000);
-                        } else {
-                            livenessCheckPassed = false;
-                            isAuthenticating = false;
-                        }
-                    });
-
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        isAuthInProgress = false;
-                    }, 2000);
-                    return;
-                }
-
-                // Success - proceed with marking attendance
-                Result<Void> markResult = attendanceRepository.markAttendance(
-                        userId,
-                        attendance.getSessionId()
-                );
-
-                if (!markResult.isSuccess()) {
-                    showError("Failed to mark attendance. Please try again.");
-                    runOnUiThread(() -> {
-                        faceAuthLayout.setVisibility(View.GONE);
-                        if (cameraProvider != null) {
-                            cameraProvider.unbindAll();
-                        }
-                    });
-                    return;
-                }
-
-                isAuthenticationSuccessful = true;
-                runOnUiThread(() -> {
-                    updateStatus("Authentication successful!", statusText);
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        faceAuthLayout.setVisibility(View.GONE);
-                        if (cameraProvider != null) {
-                            cameraProvider.unbindAll();
-                        }
-                        Toast.makeText(DashboardActivity.this,
-                                "Attendance marked successfully!", Toast.LENGTH_LONG).show();
-                        loadDashboardData(false);
-                    }, 2000);
-                });
-
-            } catch (Exception e) {
-                Log.e(TAG, "Authentication error", e);
-                showError("Authentication error: " + e.getMessage());
-                runOnUiThread(() -> {
-                    isAuthenticating = false;
-                    livenessCheckPassed = false;
-                    faceAuthLayout.setVisibility(View.GONE);
-                    if (cameraProvider != null) {
-                        cameraProvider.unbindAll();
-                    }
-                    resetFaceAuthState();
-                });
-                isAuthInProgress = false;
-            }
-        }).start();
-    }
-
-    private void updateStatus(String message, TextView statusText) {
-        runOnUiThread(() -> {
-            if (statusText != null) {
-                statusText.setText(message);
-            }
-        });
-    }
-
-    private void setNormalOverlay(View overlayView) {
-        runOnUiThread(() -> {
-            if (overlayView != null) {
-                overlayView.setBackgroundResource(R.drawable.normal_overlay);
-            }
-        });
-    }
-
-    private void setScanningOverlay(View overlayView) {
-        runOnUiThread(() -> {
-            if (overlayView != null) {
-                overlayView.setBackgroundResource(R.drawable.scanning_overlay);
-            }
-        });
-    }
-
-    private void resetFaceAuthState() {
-        livenessCheckPassed = false;
-        isAuthenticationSuccessful = false;
-        isAuthenticating = false;
-        isAuthInProgress = false;
-        isProximityValidated = false; // Reset proximity validation
-        currentAttendanceAttempt = 0;
-        if (livenessDetector != null) {
-            livenessDetector.reset();
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (cameraProvider != null) {
-            cameraProvider.unbindAll();
-        }
-        proximityBroadcaster.stopBroadcasting();
-        proximityBroadcaster.stopScanning();
-        cameraExecutor.shutdown();
-    }
-
-    private void showError(String message, Object... params) {
-        runOnUiThread(() -> {
-            // Show toast message for all error cases
-            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-
-            // Handle dialog-specific error UI updates
-            if (params != null && params.length >= 2 && params[0] instanceof EditText && params[1] instanceof Button) {
-                EditText input = (EditText) params[0];
-                Button submitButton = (Button) params[1];
-                input.setError(message);
-                submitButton.setEnabled(true);
-                submitButton.setText("Submit");
-            }
-            // Handle dashboard-specific error UI updates
-            else {
-                textClassInfo.setText("Error loading class information");
-                buttonMarkAttendance.setEnabled(false);
-                buttonViewClassAttendance.setEnabled(false);
-            }
-        });
-    }
-
-    private void setupRefreshHandler() {
-        refreshHandler = new Handler();
-        refreshRunnable = () -> {
-            loadDashboardData(User.ROLE_INSTRUCTOR.equals(sessionManager.getUserRole()));
-            refreshHandler.postDelayed(refreshRunnable, REFRESH_INTERVAL);
-        };
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        loadDashboardData(User.ROLE_INSTRUCTOR.equals(sessionManager.getUserRole()));
-        // Start periodic refresh
-        refreshHandler.postDelayed(refreshRunnable, REFRESH_INTERVAL);
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        // Stop refresh when activity is not visible
-        refreshHandler.removeCallbacks(refreshRunnable);
-        proximityBroadcaster.stopScanning(); // Stop scanning when activity is paused
-        isProximityValidated = false; // Reset the flag
-    }
-
-    private void checkFaceEnrollmentAndProceed(Attendance attendance) {
-        if (faceAuthenticationRepository == null) {
-            faceAuthenticationRepository = new FaceAuthenticationRepository(this);
-        }
-
-        new Thread(() -> {
-            Result<Boolean> hasEnrollment = faceAuthenticationRepository.hasFaceEnrolled(sessionManager.getUserId());
-
-            runOnUiThread(() -> {
-                if (!hasEnrollment.isSuccess() || !hasEnrollment.getData()) {
-                    Toast.makeText(this, "Face not enrolled. Please enroll face first.",
-                            Toast.LENGTH_LONG).show();
-                    return;
-                }
-
-                // Show OTP dialog
-                showOtpDialog(attendance);
-            });
-        }).start();
+    private void showSessionCodeDialog(String code) {
+        new AlertDialog.Builder(this)
+                .setTitle("Session Started")
+                .setMessage(String.format("Share this code with your students:\n\n%s", code))
+                .setPositiveButton("Copy Code", (dialog, which) -> {
+                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                    ClipData clip = ClipData.newPlainText("Session Code", code);
+                    clipboard.setPrimaryClip(clip);
+                    Toast.makeText(this, "Code copied to clipboard", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Close", null)
+                .show();
     }
 
     private void showOtpDialog(Attendance attendance) {
@@ -1128,4 +1051,76 @@ public class DashboardActivity extends AppCompatActivity {
         input.requestFocus();
         dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
     }
+
+    private void showEnableProximityDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Proximity Validation Required")
+                .setMessage("Proximity validation requires Bluetooth. Would you like to enable it now?")
+                .setPositiveButton("Enable", (dialog, which) -> {
+                    Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                    bluetoothEnableLauncher.launch(enableBtIntent);
+                })
+                .setNegativeButton("Cancel", (dialog, which) ->
+                        Toast.makeText(this,
+                                "Proximity validation requires Bluetooth to be enabled",
+                                Toast.LENGTH_LONG).show())
+                .setCancelable(false)
+                .show();
+    }
+
+    // Utility Methods
+    private void updateStatus(String message, TextView statusText) {
+        runOnUiThread(() -> {
+            if (statusText != null) {
+                statusText.setText(message);
+            }
+        });
+    }
+
+    private void setNormalOverlay(View overlayView) {
+        runOnUiThread(() -> {
+            if (overlayView != null) {
+                overlayView.setBackgroundResource(R.drawable.normal_overlay);
+            }
+        });
+    }
+
+    private void setScanningOverlay(View overlayView) {
+        runOnUiThread(() -> {
+            if (overlayView != null) {
+                overlayView.setBackgroundResource(R.drawable.scanning_overlay);
+            }
+        });
+    }
+
+    private void resetFaceAuthState() {
+        livenessCheckPassed = false;
+        isAuthenticationSuccessful = false;
+        isAuthenticating = false;
+        isAuthInProgress = false;
+        isProximityValidated = false;
+        currentAttendanceAttempt = 0;
+        if (livenessDetector != null) {
+            livenessDetector.reset();
+        }
+    }
+
+    private void showError(String message, Object... params) {
+        runOnUiThread(() -> {
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+
+            if (params != null && params.length >= 2 && params[0] instanceof EditText && params[1] instanceof Button) {
+                EditText input = (EditText) params[0];
+                Button submitButton = (Button) params[1];
+                input.setError(message);
+                submitButton.setEnabled(true);
+                submitButton.setText("Submit");
+            } else {
+                textClassInfo.setText("Error loading class information");
+                buttonMarkAttendance.setEnabled(false);
+                buttonViewClassAttendance.setEnabled(false);
+            }
+        });
+    }
 }
+

@@ -1,3 +1,7 @@
+/**
+ * Utility class for handling Bluetooth LE proximity broadcasting and scanning.
+ * Manages proximity-based session validation using Bluetooth LE advertising.
+ */
 package com.biolock.utils;
 
 import android.bluetooth.BluetoothAdapter;
@@ -14,15 +18,18 @@ import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.os.ParcelUuid;
 import android.util.Log;
+
 import java.util.ArrayList;
 import java.util.List;
 
 public class ProximityBroadcaster {
+    // Constants
     private static final String TAG = "ProximityBroadcaster";
     private static final ParcelUuid SERVICE_UUID =
             ParcelUuid.fromString("00001234-0000-1000-8000-00805F9B34FB");
     private static final long SCAN_PERIOD = 10000;
 
+    // Components
     private final Context context;
     private final BluetoothAdapter bluetoothAdapter;
     private BluetoothLeAdvertiser advertiser;
@@ -31,12 +38,14 @@ public class ProximityBroadcaster {
     private AdvertiseCallback advertiseCallback;
     private ProximityListener proximityListener;
 
+    // Listener Interface
     public interface ProximityListener {
-        void onProximityDetected(Long sessionId); // Change to Long instead of String
+        void onProximityDetected(Long sessionId);
         void onProximityTimeout();
         void onProximityError(String error);
     }
 
+    // Constructor
     public ProximityBroadcaster(Context context) {
         this.context = context;
         BluetoothManager bluetoothManager = (BluetoothManager)
@@ -44,6 +53,7 @@ public class ProximityBroadcaster {
         this.bluetoothAdapter = bluetoothManager.getAdapter();
     }
 
+    // Public Methods
     public void setProximityListener(ProximityListener listener) {
         this.proximityListener = listener;
     }
@@ -54,23 +64,10 @@ public class ProximityBroadcaster {
             return;
         }
 
-        // Convert Long to String before broadcasting
         String sessionIdString = String.valueOf(sessionId);
 
         try {
-            // Rest of your existing broadcasting code
-            if (!ProximityValidator.hasRequiredPermissions(context)) {
-                notifyError("Required permissions not granted");
-                return;
-            }
-
-            if (!ProximityValidator.isBleSupported(context)) {
-                notifyError("Device does not support proximity validation");
-                return;
-            }
-
-            if (!ProximityValidator.isBluetoothEnabled(context)) {
-                notifyError("Proximity validation is disabled");
+            if (!checkPrerequisites()) {
                 return;
             }
 
@@ -80,55 +77,22 @@ public class ProximityBroadcaster {
                 return;
             }
 
-            AdvertiseSettings settings = new AdvertiseSettings.Builder()
-                    .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-                    .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-                    .setConnectable(false)
-                    .build();
-
-            AdvertiseData data = new AdvertiseData.Builder()
-                    .addServiceUuid(SERVICE_UUID)
-                    .addServiceData(SERVICE_UUID, sessionIdString.getBytes())
-                    .build();
-
-            advertiseCallback = new AdvertiseCallback() {
-                @Override
-                public void onStartSuccess(AdvertiseSettings settingsInEffect) {
-                    Log.d(TAG, "Started broadcasting proximity signal for session: " + sessionIdString);
-                }
-
-                @Override
-                public void onStartFailure(int errorCode) {
-                    notifyError("Failed to start broadcasting: " + errorCode);
-                }
-            };
+            AdvertiseSettings settings = createAdvertiseSettings();
+            AdvertiseData data = createAdvertiseData(sessionIdString);
+            advertiseCallback = createAdvertiseCallback(sessionIdString);
 
             advertiser.startAdvertising(settings, data, advertiseCallback);
 
         } catch (SecurityException e) {
-            Log.e(TAG, "Security exception while broadcasting", e);
-            notifyError("Security exception: " + e.getMessage());
+            handleSecurityException("broadcasting", e);
         } catch (Exception e) {
-            Log.e(TAG, "Error while broadcasting", e);
-            notifyError("Error: " + e.getMessage());
+            handleException("broadcasting", e);
         }
     }
 
     public void startScanning() {
         try {
-            // Check all prerequisites first
-            if (!ProximityValidator.hasRequiredPermissions(context)) {
-                notifyError("Required permissions not granted");
-                return;
-            }
-
-            if (!ProximityValidator.isBleSupported(context)) {
-                notifyError("Device does not support proximity validation");
-                return;
-            }
-
-            if (!ProximityValidator.isBluetoothEnabled(context)) {
-                notifyError("Proximity validation is disabled");
+            if (!checkPrerequisites()) {
                 return;
             }
 
@@ -138,53 +102,18 @@ public class ProximityBroadcaster {
                 return;
             }
 
-            List<ScanFilter> filters = new ArrayList<>();
-            filters.add(new ScanFilter.Builder()
-                    .setServiceUuid(SERVICE_UUID)
-                    .build());
-
-            ScanSettings settings = new ScanSettings.Builder()
-                    .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-                    .build();
-
-            scanCallback = new ScanCallback() {
-                @Override
-                public void onScanResult(int callbackType, ScanResult result) {
-                    try {
-                        byte[] serviceData = result.getScanRecord().getServiceData(SERVICE_UUID);
-                        if (serviceData != null && proximityListener != null) {
-                            String sessionIdString = new String(serviceData);
-                            Long sessionId = Long.parseLong(sessionIdString);
-                            proximityListener.onProximityDetected(sessionId);
-                        }
-                    } catch (NumberFormatException e) {
-                        Log.e(TAG, "Error parsing session ID", e);
-                        notifyError("Invalid session ID format");
-                    }
-                }
-
-                @Override
-                public void onScanFailed(int errorCode) {
-                    notifyError("Proximity scan failed: " + errorCode);
-                }
-            };
+            List<ScanFilter> filters = createScanFilters();
+            ScanSettings settings = createScanSettings();
+            scanCallback = createScanCallback();
 
             scanner.startScan(filters, settings, scanCallback);
 
-            // Stop scanning after SCAN_PERIOD
-            new android.os.Handler().postDelayed(() -> {
-                stopScanning();
-                if (proximityListener != null) {
-                    proximityListener.onProximityTimeout();
-                }
-            }, SCAN_PERIOD);
+            setupScanTimeout();
 
         } catch (SecurityException e) {
-            Log.e(TAG, "Security exception while scanning", e);
-            notifyError("Security exception: " + e.getMessage());
+            handleSecurityException("scanning", e);
         } catch (Exception e) {
-            Log.e(TAG, "Error while scanning", e);
-            notifyError("Error: " + e.getMessage());
+            handleException("scanning", e);
         }
     }
 
@@ -206,6 +135,116 @@ public class ProximityBroadcaster {
         } catch (SecurityException e) {
             Log.e(TAG, "Security exception while stopping scan", e);
         }
+    }
+
+    // Private Helper Methods
+    private boolean checkPrerequisites() {
+        if (!ProximityValidator.hasRequiredPermissions(context)) {
+            notifyError("Required permissions not granted");
+            return false;
+        }
+
+        if (!ProximityValidator.isBleSupported(context)) {
+            notifyError("Device does not support proximity validation");
+            return false;
+        }
+
+        if (!ProximityValidator.isBluetoothEnabled(context)) {
+            notifyError("Proximity validation is disabled");
+            return false;
+        }
+
+        return true;
+    }
+
+    private AdvertiseSettings createAdvertiseSettings() {
+        return new AdvertiseSettings.Builder()
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+                .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+                .setConnectable(false)
+                .build();
+    }
+
+    private AdvertiseData createAdvertiseData(String sessionIdString) {
+        return new AdvertiseData.Builder()
+                .addServiceUuid(SERVICE_UUID)
+                .addServiceData(SERVICE_UUID, sessionIdString.getBytes())
+                .build();
+    }
+
+    private AdvertiseCallback createAdvertiseCallback(String sessionIdString) {
+        return new AdvertiseCallback() {
+            @Override
+            public void onStartSuccess(AdvertiseSettings settingsInEffect) {
+                Log.d(TAG, "Started broadcasting proximity signal for session: " + sessionIdString);
+            }
+
+            @Override
+            public void onStartFailure(int errorCode) {
+                notifyError("Failed to start broadcasting: " + errorCode);
+            }
+        };
+    }
+
+    private List<ScanFilter> createScanFilters() {
+        List<ScanFilter> filters = new ArrayList<>();
+        filters.add(new ScanFilter.Builder()
+                .setServiceUuid(SERVICE_UUID)
+                .build());
+        return filters;
+    }
+
+    private ScanSettings createScanSettings() {
+        return new ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .build();
+    }
+
+    private ScanCallback createScanCallback() {
+        return new ScanCallback() {
+            @Override
+            public void onScanResult(int callbackType, ScanResult result) {
+                processScanResult(result);
+            }
+
+            @Override
+            public void onScanFailed(int errorCode) {
+                notifyError("Proximity scan failed: " + errorCode);
+            }
+        };
+    }
+
+    private void processScanResult(ScanResult result) {
+        try {
+            byte[] serviceData = result.getScanRecord().getServiceData(SERVICE_UUID);
+            if (serviceData != null && proximityListener != null) {
+                String sessionIdString = new String(serviceData);
+                Long sessionId = Long.parseLong(sessionIdString);
+                proximityListener.onProximityDetected(sessionId);
+            }
+        } catch (NumberFormatException e) {
+            Log.e(TAG, "Error parsing session ID", e);
+            notifyError("Invalid session ID format");
+        }
+    }
+
+    private void setupScanTimeout() {
+        new android.os.Handler().postDelayed(() -> {
+            stopScanning();
+            if (proximityListener != null) {
+                proximityListener.onProximityTimeout();
+            }
+        }, SCAN_PERIOD);
+    }
+
+    private void handleSecurityException(String operation, SecurityException e) {
+        Log.e(TAG, "Security exception while " + operation, e);
+        notifyError("Security exception: " + e.getMessage());
+    }
+
+    private void handleException(String operation, Exception e) {
+        Log.e(TAG, "Error while " + operation, e);
+        notifyError("Error: " + e.getMessage());
     }
 
     private void notifyError(String error) {

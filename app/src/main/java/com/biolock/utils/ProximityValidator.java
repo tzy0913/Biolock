@@ -1,3 +1,7 @@
+/**
+ * Utility class for validating Bluetooth LE capabilities and permissions.
+ * Handles permission checks, BLE support validation, and Bluetooth state checks.
+ */
 package com.biolock.utils;
 
 import android.Manifest;
@@ -7,14 +11,18 @@ import android.bluetooth.BluetoothManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Build;
+
 import androidx.core.content.ContextCompat;
+
 import java.util.ArrayList;
 import java.util.List;
 
 public class ProximityValidator {
+    // Constants
     private static final String TAG = "ProximityValidator";
     public static final int PERMISSION_REQUEST_CODE = 123;
 
+    // Permission Validation Methods
     public static boolean hasRequiredPermissions(Context context) {
         List<String> requiredPermissions = getRequiredPermissions();
 
@@ -62,6 +70,7 @@ public class ProximityValidator {
         return missingPermissions;
     }
 
+    // Bluetooth Support Methods
     public static boolean isBleSupported(Context context) {
         return context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE);
     }

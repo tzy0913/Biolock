@@ -1,3 +1,7 @@
+/**
+ * Fragment for displaying current session attendance data and statistics.
+ * Shows real-time attendance status and analytics for instructors.
+ */
 package com.biolock.ui.attendance.fragments;
 
 import android.os.Bundle;
@@ -7,9 +11,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 import android.widget.ProgressBar;
+
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+
 import com.biolock.R;
 import com.biolock.model.Attendance;
 import com.biolock.model.CourseClass;
@@ -21,15 +27,21 @@ import java.util.Calendar;
 import java.util.List;
 
 public class CurrentSessionFragment extends Fragment {
+    // Constants
     private static final String TAG = "CurrentSession";
     private static final String ARG_CLASS_ID = "class_id";
 
+    // Core Data
     private Long classId;
+    private AttendanceRepository attendanceRepository;
+    private AttendanceAdapter adapter;
+
+    // UI Components - Main
     private RecyclerView recyclerView;
     private TextView textNoSession;
     private View cardStats;
 
-    // Stats views
+    // UI Components - Statistics
     private TextView textTotalStudents;
     private TextView textPresentCount;
     private TextView textLateCount;
@@ -38,9 +50,7 @@ public class CurrentSessionFragment extends Fragment {
     private ProgressBar progressLate;
     private ProgressBar progressNotMarked;
 
-    private AttendanceRepository attendanceRepository;
-    private AttendanceAdapter adapter;
-
+    // Factory Method
     public static CurrentSessionFragment newInstance(Long classId) {
         CurrentSessionFragment fragment = new CurrentSessionFragment();
         Bundle args = new Bundle();
@@ -49,6 +59,7 @@ public class CurrentSessionFragment extends Fragment {
         return fragment;
     }
 
+    // Lifecycle Methods
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -67,12 +78,13 @@ public class CurrentSessionFragment extends Fragment {
         return view;
     }
 
+    // Initialization Methods
     private void initializeViews(View view) {
         recyclerView = view.findViewById(R.id.recyclerView);
         textNoSession = view.findViewById(R.id.textNoSession);
         cardStats = view.findViewById(R.id.cardStats);
 
-        // Initialize stats views
+        // Stats views
         textTotalStudents = view.findViewById(R.id.textTotalStudents);
         textPresentCount = view.findViewById(R.id.textPresentCount);
         textLateCount = view.findViewById(R.id.textLateCount);
@@ -91,6 +103,7 @@ public class CurrentSessionFragment extends Fragment {
         recyclerView.setAdapter(adapter);
     }
 
+    // Data Loading Methods
     private void loadCurrentSessionData() {
         new Thread(() -> {
             try {
@@ -134,32 +147,6 @@ public class CurrentSessionFragment extends Fragment {
         }).start();
     }
 
-    private CourseClass findCurrentSession(List<CourseClass> classes) {
-        Calendar now = Calendar.getInstance();
-        Log.d(TAG, "Finding current session at time: " + now.getTime());
-
-        for (CourseClass classObj : classes) {
-            Calendar startTime = Calendar.getInstance();
-            Calendar endTime = Calendar.getInstance();
-
-            startTime.setTime(classObj.getSessionDate());
-            endTime.setTime(classObj.getSessionDate());
-
-            startTime.set(Calendar.HOUR_OF_DAY, classObj.getStartTime().getHours());
-            startTime.set(Calendar.MINUTE, classObj.getStartTime().getMinutes());
-
-            endTime.set(Calendar.HOUR_OF_DAY, classObj.getEndTime().getHours());
-            endTime.set(Calendar.MINUTE, classObj.getEndTime().getMinutes());
-            endTime.add(Calendar.MINUTE, 30); // 30 min buffer
-
-            if (now.after(startTime) && now.before(endTime)) {
-                Log.d(TAG, "Found ongoing class");
-                return classObj;
-            }
-        }
-        return null;
-    }
-
     private void loadAttendanceForSession(CourseClass currentClass) {
         if (currentClass == null || currentClass.getSessionId() == null) {
             displayError("Invalid session data");
@@ -187,6 +174,34 @@ public class CurrentSessionFragment extends Fragment {
         }).start();
     }
 
+    // Session Management Methods
+    private CourseClass findCurrentSession(List<CourseClass> classes) {
+        Calendar now = Calendar.getInstance();
+        Log.d(TAG, "Finding current session at time: " + now.getTime());
+
+        for (CourseClass classObj : classes) {
+            Calendar startTime = Calendar.getInstance();
+            Calendar endTime = Calendar.getInstance();
+
+            startTime.setTime(classObj.getSessionDate());
+            endTime.setTime(classObj.getSessionDate());
+
+            startTime.set(Calendar.HOUR_OF_DAY, classObj.getStartTime().getHours());
+            startTime.set(Calendar.MINUTE, classObj.getStartTime().getMinutes());
+
+            endTime.set(Calendar.HOUR_OF_DAY, classObj.getEndTime().getHours());
+            endTime.set(Calendar.MINUTE, classObj.getEndTime().getMinutes());
+            endTime.add(Calendar.MINUTE, 30); // 30 min buffer
+
+            if (now.after(startTime) && now.before(endTime)) {
+                Log.d(TAG, "Found ongoing class");
+                return classObj;
+            }
+        }
+        return null;
+    }
+
+    // Display Methods
     private void displayAttendance(List<Attendance> attendances) {
         if (attendances == null || attendances.isEmpty()) {
             displayNoSession();

@@ -51,9 +51,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class LoginActivity extends AppCompatActivity {
+    // region Constants
     private static final String TAG = "LoginActivity";
-
-    // Constants
     private static final int PERMISSION_REQUEST_CODE = 10;
     private static final String[] REQUIRED_PERMISSIONS = new String[]{Manifest.permission.CAMERA};
     private static final long WELCOME_DELAY = 1500;
@@ -89,8 +88,7 @@ public class LoginActivity extends AppCompatActivity {
     private boolean isAuthInProgress = false;
     private int currentAttempt = 0;
 
-    // Activity Lifecycle
-
+    // Lifecycle Methods
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -98,7 +96,7 @@ public class LoginActivity extends AppCompatActivity {
 
         sessionManager = new SessionManager(this);
         Long currentUserId = sessionManager.getLastUserId();
-        Log.d(TAG, "onCreate - Current User ID: " + currentUserId); // Add this debug line
+        Log.d(TAG, "onCreate - Current User ID: " + currentUserId);
 
         if (sessionManager.isLoggedIn()) {
             startActivity(new Intent(this, DashboardActivity.class));
@@ -138,7 +136,6 @@ public class LoginActivity extends AppCompatActivity {
     }
 
     // Initialization Methods
-
     private void initializeComponents() {
         initializeViews();
 
@@ -220,7 +217,6 @@ public class LoginActivity extends AppCompatActivity {
         findViewById(R.id.buttonRegister).setOnClickListener(v ->
                 startActivity(new Intent(this, RegisterActivity.class)));
 
-        // Back button from face login
         findViewById(R.id.buttonBackToChoiceFromFace).setOnClickListener(v -> {
             faceLoginLayout.setVisibility(View.GONE);
             loginChoiceLayout.setVisibility(View.VISIBLE);
@@ -231,6 +227,7 @@ public class LoginActivity extends AppCompatActivity {
         });
     }
 
+    // Face Login Methods
     private void startFaceLogin() {
         if (!allPermissionsGranted()) {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, PERMISSION_REQUEST_CODE);
@@ -251,7 +248,6 @@ public class LoginActivity extends AppCompatActivity {
             Result<Boolean> isLockedResult = userRepository.isUserLocked(lastUserId);
 
             if (isLockedResult.isSuccess() && isLockedResult.getData()) {
-                // Get user details in background
                 Result<User> userResult = userRepository.getUserById(lastUserId);
 
                 runOnUiThread(() -> {
@@ -261,7 +257,6 @@ public class LoginActivity extends AppCompatActivity {
                     loginChoiceLayout.setVisibility(View.GONE);
                     manualLoginLayout.setVisibility(View.VISIBLE);
 
-                    // Pre-fill email if available
                     if (userResult.isSuccess()) {
                         editTextEmail.setText(userResult.getData().getEmail());
                     }
@@ -269,7 +264,6 @@ public class LoginActivity extends AppCompatActivity {
                 return;
             }
 
-            // If not locked, proceed with normal face login flow
             Result<Boolean> hasEnrollment = faceAuthenticationRepository.hasFaceEnrolled(lastUserId);
             Result<SecuritySettings> settingsResult = userRepository.getSecuritySettings(lastUserId);
 
@@ -405,6 +399,29 @@ public class LoginActivity extends AppCompatActivity {
         }
     }
 
+    private void checkFaceQuality(Face face) {
+        float rotY = face.getHeadEulerAngleY();
+        float rotZ = face.getHeadEulerAngleZ();
+
+        if (Math.abs(rotY) < 15 && Math.abs(rotZ) < 15) {
+            setScanningOverlay();
+            isAuthenticating = true;
+        } else {
+            isAuthenticating = false;
+            setNormalOverlay();
+            StringBuilder guidance = new StringBuilder("Please ");
+            if (Math.abs(rotY) >= 15) {
+                guidance.append("face the camera directly");
+            }
+            if (Math.abs(rotZ) >= 15) {
+                if (guidance.length() > 7) guidance.append(" and ");
+                guidance.append("keep your head level");
+            }
+            updateStatus(guidance.toString());
+        }
+    }
+
+    // Authentication Methods
     private void authenticateUser(Bitmap faceBitmap) {
         Long lastUserId = sessionManager.getLastUserId();
         if (lastUserId == null || lastUserId == -1 || isAuthenticationSuccessful) {
@@ -447,46 +464,7 @@ public class LoginActivity extends AppCompatActivity {
                         updateStatus(failMessage);
 
                         if (currentAttempt >= maxAttempts) {
-                            isAuthenticating = false;
-                            updateStatus("Max attempts reached. Account temporarily locked.");
-                            setNormalOverlay();
-
-                            // Show lockout message
-                            Toast.makeText(LoginActivity.this,
-                                    "Account locked due to too many failed attempts. Redirecting to manual login...",
-                                    Toast.LENGTH_LONG).show();
-
-                            // Move the database operation to a background thread
-                            new Thread(() -> {
-                                // Get user details in background
-                                Result<User> userResult = userRepository.getUserById(lastUserId);
-
-                                // Handle UI updates on main thread
-                                runOnUiThread(() -> {
-                                    // Add a slight delay before transitioning
-                                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                                        // Hide face login layout
-                                        faceLoginLayout.setVisibility(View.GONE);
-
-                                        // Show manual login layout
-                                        manualLoginLayout.setVisibility(View.VISIBLE);
-
-                                        // Clear the password field
-                                        editTextPassword.setText("");
-
-                                        // Pre-fill email if we got the user details
-                                        if (userResult.isSuccess()) {
-                                            editTextEmail.setText(userResult.getData().getEmail());
-                                        }
-
-                                        // Clean up camera resources
-                                        if (cameraProvider != null) {
-                                            cameraProvider.unbindAll();
-                                        }
-                                        resetFaceAuthState();
-                                    }, 2000); // 2-second delay before redirect
-                                });
-                            }).start();
+                            handleMaxAttemptsReached(lastUserId);
                         } else {
                             livenessCheckPassed = false;
                             isAuthenticating = false;
@@ -510,26 +488,35 @@ public class LoginActivity extends AppCompatActivity {
         }).start();
     }
 
-    private void checkFaceQuality(Face face) {
-        float rotY = face.getHeadEulerAngleY();
-        float rotZ = face.getHeadEulerAngleZ();
+    private void handleMaxAttemptsReached(Long userId) {
+        isAuthenticating = false;
+        updateStatus("Max attempts reached. Account temporarily locked.");
+        setNormalOverlay();
 
-        if (Math.abs(rotY) < 15 && Math.abs(rotZ) < 15) {
-            setScanningOverlay();
-            isAuthenticating = true;
-        } else {
-            isAuthenticating = false;
-            setNormalOverlay();
-            StringBuilder guidance = new StringBuilder("Please ");
-            if (Math.abs(rotY) >= 15) {
-                guidance.append("face the camera directly");
-            }
-            if (Math.abs(rotZ) >= 15) {
-                if (guidance.length() > 7) guidance.append(" and ");
-                guidance.append("keep your head level");
-            }
-            updateStatus(guidance.toString());
-        }
+        Toast.makeText(LoginActivity.this,
+                "Account locked due to too many failed attempts. Redirecting to manual login...",
+                Toast.LENGTH_LONG).show();
+
+        new Thread(() -> {
+            Result<User> userResult = userRepository.getUserById(userId);
+
+            runOnUiThread(() -> {
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    faceLoginLayout.setVisibility(View.GONE);
+                    manualLoginLayout.setVisibility(View.VISIBLE);
+                    editTextPassword.setText("");
+
+                    if (userResult.isSuccess()) {
+                        editTextEmail.setText(userResult.getData().getEmail());
+                    }
+
+                    if (cameraProvider != null) {
+                        cameraProvider.unbindAll();
+                    }
+                    resetFaceAuthState();
+                }, 2000);
+            });
+        }).start();
     }
 
     private void handleLogin() {
@@ -559,57 +546,65 @@ public class LoginActivity extends AppCompatActivity {
                 } else {
                     runOnUiThread(() -> {
                         progress.dismiss();
-                        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-                        builder.setTitle("Login Failed")
-                                .setMessage("Invalid email or password. Please try again.")
-                                .setPositiveButton("OK", (dialog, which) -> dialog.dismiss())
-                                .show();
+                        showLoginErrorDialog("Login Failed",
+                                "Invalid email or password. Please try again.");
                     });
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Login error", e);
                 runOnUiThread(() -> {
                     progress.dismiss();
-                    AlertDialog.Builder builder = new AlertDialog.Builder(this);
-                    builder.setTitle("Login Error")
-                            .setMessage("Error during login: " + e.getMessage())
-                            .setPositiveButton("OK", (dialog, which) -> dialog.dismiss())
-                            .show();
+                    showLoginErrorDialog("Login Error",
+                            "Error during login: " + e.getMessage());
                 });
             }
         }).start();
     }
 
+    private void showLoginErrorDialog(String title, String message) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(title)
+                .setMessage(message)
+                .setPositiveButton("OK", (dialog, which) -> dialog.dismiss())
+                .show();
+    }
+
     private void handleSuccessfulLogin(User user) {
         runOnUiThread(() -> {
             if (faceLoginLayout.getVisibility() == View.VISIBLE) {
-                // Fade out face login views
-                View[] viewsToHide = {
-                        previewView,
-                        overlayView,
-                        findViewById(R.id.statusLayout),
-                        findViewById(R.id.buttonBackToChoiceFromFace)
-                };
-
-                for (View view : viewsToHide) {
-                    if (view != null) {
-                        view.animate()
-                                .alpha(0f)
-                                .setDuration(200)
-                                .start();
-                    }
-                }
+                fadeOutFaceLoginViews();
             } else {
-                // Fade out manual login layout
-                manualLoginLayout.animate()
-                        .alpha(0f)
-                        .setDuration(200)
-                        .withEndAction(() -> manualLoginLayout.setVisibility(View.GONE))
-                        .start();
+                fadeOutManualLoginLayout();
             }
-
             showWelcomeAndTransition(user);
         });
+    }
+
+    // UI Helper Methods
+    private void fadeOutFaceLoginViews() {
+        View[] viewsToHide = {
+                previewView,
+                overlayView,
+                findViewById(R.id.statusLayout),
+                findViewById(R.id.buttonBackToChoiceFromFace)
+        };
+
+        for (View view : viewsToHide) {
+            if (view != null) {
+                view.animate()
+                        .alpha(0f)
+                        .setDuration(200)
+                        .start();
+            }
+        }
+    }
+
+    private void fadeOutManualLoginLayout() {
+        manualLoginLayout.animate()
+                .alpha(0f)
+                .setDuration(200)
+                .withEndAction(() -> manualLoginLayout.setVisibility(View.GONE))
+                .start();
     }
 
     private void showWelcomeAndTransition(User user) {
@@ -622,14 +617,13 @@ public class LoginActivity extends AppCompatActivity {
                 .setDuration(300)
                 .withEndAction(() -> {
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        // Set session
                         sessionManager.createLoginSession(
                                 user.getUserId(),
                                 user.getEmail(),
                                 user.getName(),
                                 user.getRole()
                         );
-                        Log.d(TAG, "Setting User ID in session: " + user.getUserId()); // Add this debug line
+                        Log.d(TAG, "Setting User ID in session: " + user.getUserId());
 
                         Intent intent = new Intent(LoginActivity.this, DashboardActivity.class);
                         startActivity(intent);
@@ -639,7 +633,6 @@ public class LoginActivity extends AppCompatActivity {
                 })
                 .start();
     }
-
 
     private String getTimeBasedGreeting(String name) {
         Calendar c = Calendar.getInstance();
@@ -668,6 +661,7 @@ public class LoginActivity extends AppCompatActivity {
         runOnUiThread(() -> overlayView.setBackgroundResource(R.drawable.scanning_overlay));
     }
 
+    // State Management Methods
     private void resetFaceAuthState() {
         livenessCheckPassed = false;
         isAuthenticationSuccessful = false;
@@ -677,6 +671,7 @@ public class LoginActivity extends AppCompatActivity {
         livenessDetector.reset();
     }
 
+    // Permission Handling
     private boolean allPermissionsGranted() {
         for (String permission : REQUIRED_PERMISSIONS) {
             if (ContextCompat.checkSelfPermission(this, permission)
@@ -700,8 +695,4 @@ public class LoginActivity extends AppCompatActivity {
             }
         }
     }
-
-
-
-
 }

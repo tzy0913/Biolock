@@ -1,3 +1,7 @@
+/**
+ * Fragment for displaying monthly attendance records with calendar selection.
+ * Shows attendance data for selected dates with calendar navigation.
+ */
 package com.biolock.ui.attendance.fragments;
 
 import android.os.Bundle;
@@ -6,35 +10,45 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.CalendarView;
 import android.widget.TextView;
+
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+
 import com.biolock.R;
 import com.biolock.model.Attendance;
+import com.biolock.model.User;
 import com.biolock.repository.AttendanceRepository;
 import com.biolock.repository.Result;
 import com.biolock.ui.attendance.adapter.AttendanceAdapter;
 import com.biolock.utils.SessionManager;
-import com.biolock.model.User;
+
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 public class MonthAttendanceFragment extends Fragment {
+    // Constants
     private static final String ARG_USER_ROLE = "user_role";
     private static final String ARG_CLASS_ID = "class_id";
 
+    // UI Components
     private CalendarView calendarView;
     private RecyclerView recyclerView;
     private TextView textNoClasses;
     private TextView textSelectedDate;
+
+    // Dependencies
     private AttendanceRepository attendanceRepository;
     private SessionManager sessionManager;
     private AttendanceAdapter adapter;
+
+    // State
     private LocalDate selectedDate;
     private String userRole;
     private Long classId;
 
+    // Factory Method
     public static MonthAttendanceFragment newInstance(String userRole, Long classId) {
         MonthAttendanceFragment fragment = new MonthAttendanceFragment();
         Bundle args = new Bundle();
@@ -46,6 +60,7 @@ public class MonthAttendanceFragment extends Fragment {
         return fragment;
     }
 
+    // Lifecycle Methods
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -67,6 +82,7 @@ public class MonthAttendanceFragment extends Fragment {
         return view;
     }
 
+    // Initialization Methods
     private void initializeViews(View view) {
         calendarView = view.findViewById(R.id.calendarView);
         recyclerView = view.findViewById(R.id.recyclerViewClasses);
@@ -78,7 +94,7 @@ public class MonthAttendanceFragment extends Fragment {
 
         adapter = new AttendanceAdapter();
         adapter.setInstructorView(User.ROLE_INSTRUCTOR.equals(userRole));
-        adapter.setShowDate(false); // Single day view doesn't need dates
+        adapter.setShowDate(false);
 
         recyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
         recyclerView.setAdapter(adapter);
@@ -94,16 +110,17 @@ public class MonthAttendanceFragment extends Fragment {
         });
     }
 
+    // Date Management Methods
     private void updateSelectedDateText() {
         textSelectedDate.setText(selectedDate.format(
                 DateTimeFormatter.ofPattern("MMMM dd, yyyy")));
     }
 
+    // Data Loading Methods
     private void loadSelectedDateAttendance() {
         new Thread(() -> {
             try {
                 boolean isInstructor = User.ROLE_INSTRUCTOR.equals(userRole);
-                // Use instructor's ID instead of class ID
                 Long id = isInstructor ? sessionManager.getUserId() : sessionManager.getUserId();
 
                 Result<List<?>> result = attendanceRepository.getDateAttendance(id, isInstructor, selectedDate);
@@ -123,6 +140,7 @@ public class MonthAttendanceFragment extends Fragment {
         }).start();
     }
 
+    // UI Update Methods
     private void updateUI(List<?> items) {
         if (items == null || items.isEmpty()) {
             recyclerView.setVisibility(View.GONE);
