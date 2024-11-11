@@ -29,6 +29,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -204,6 +205,7 @@ public class DashboardActivity extends AppCompatActivity {
 
     // Initialization Methods
     private void initializeViews() {
+        // Main content views
         textGreeting = findViewById(R.id.textGreeting);
         textClassInfo = findViewById(R.id.textClassInfo);
         buttonMarkAttendance = findViewById(R.id.buttonMarkAttendance);
@@ -213,33 +215,62 @@ public class DashboardActivity extends AppCompatActivity {
         buttonEndSession = findViewById(R.id.buttonEndSession);
         buttonViewClassAttendance = findViewById(R.id.buttonViewClassAttendance);
 
-        timeFormat = new SimpleDateFormat("h:mm a", Locale.getDefault());
-        sessionManager = new SessionManager(this);
-        attendanceRepository = new AttendanceRepository();
-        sessionRepository = new SessionRepository();
-        userRepository = new UserRepository();
-
+        // Initialize face auth related views
         faceAuthLayout = findViewById(R.id.faceAuthLayout);
         previewView = findViewById(R.id.previewView);
         statusText = findViewById(R.id.statusTextView);
         overlayView = findViewById(R.id.overlayView);
 
+        // Initialize utilities
+        timeFormat = new SimpleDateFormat("h:mm a", Locale.getDefault());
+        sessionManager = new SessionManager(this);
+        attendanceRepository = new AttendanceRepository();
+        sessionRepository = new SessionRepository();
+        userRepository = new UserRepository();
         proximityBroadcaster = new ProximityBroadcaster(this);
         setupBluetoothLauncher();
 
+        // Set greeting text
         textGreeting.setText(String.format("Hi, %s!", sessionManager.getUserName()));
 
-        findViewById(R.id.buttonSettings).setOnClickListener(v ->
-                startActivity(new Intent(this, SettingsActivity.class)));
+        // Bottom Navigation Click Listeners
+        LinearLayout settingsGroup = findViewById(R.id.settingsGroup);
+        LinearLayout scheduleGroup = findViewById(R.id.scheduleGroup);
+        LinearLayout logoutGroup = findViewById(R.id.logoutGroup);
 
-        findViewById(R.id.buttonLogout).setOnClickListener(v -> {
+        // Settings group click listener
+        settingsGroup.setOnClickListener(v -> {
+            Intent intent = new Intent(this, SettingsActivity.class);
+            startActivity(intent);
+        });
+
+        // Schedule group click listener (opens View Attendance)
+        scheduleGroup.setOnClickListener(v -> {
+            Intent intent = new Intent(this, ViewAttendanceActivity.class);
+            startActivity(intent);
+        });
+
+        // Logout group click listener
+        logoutGroup.setOnClickListener(v -> {
             proximityBroadcaster.stopBroadcasting();
             proximityBroadcaster.stopScanning();
             sessionManager.logoutUser();
-            startActivity(new Intent(this, LoginActivity.class));
+            Intent intent = new Intent(this, LoginActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            startActivity(intent);
             finish();
         });
 
+        // Set individual image button click listeners for ripple effect
+        ImageButton imageButtonSettings = findViewById(R.id.imageButtonSettings);
+        ImageButton imageButtonCalendar = findViewById(R.id.imageButtonCalendar);
+        ImageButton imageButtonLogout = findViewById(R.id.imageButtonLogout);
+
+        imageButtonSettings.setOnClickListener(v -> settingsGroup.performClick());
+        imageButtonCalendar.setOnClickListener(v -> scheduleGroup.performClick());
+        imageButtonLogout.setOnClickListener(v -> logoutGroup.performClick());
+
+        // Face Auth back button
         findViewById(R.id.buttonBackToChoiceFromFace).setOnClickListener(v -> {
             faceAuthLayout.setVisibility(View.GONE);
             if (cameraProvider != null) {
@@ -247,6 +278,15 @@ public class DashboardActivity extends AppCompatActivity {
             }
             resetFaceAuthState();
         });
+
+        // Make text views clickable for the bottom navigation
+        TextView buttonSettings = findViewById(R.id.buttonSettings);
+        TextView buttonCalendar = findViewById(R.id.buttonCalendar);
+        TextView buttonLogout = findViewById(R.id.buttonLogout);
+
+        buttonSettings.setOnClickListener(v -> settingsGroup.performClick());
+        buttonCalendar.setOnClickListener(v -> scheduleGroup.performClick());
+        buttonLogout.setOnClickListener(v -> logoutGroup.performClick());
     }
 
     private void setupBluetoothLauncher() {

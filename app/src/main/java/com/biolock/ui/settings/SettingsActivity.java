@@ -376,19 +376,36 @@ public class SettingsActivity extends AppCompatActivity {
         statusText.append(metrics.securityStatus).append("\n\n");
 
         if (metrics.totalLoginAttempts > 0) {
-            statusText.append(String.format(Locale.US, "Login Success Rate: %.1f%%\n", metrics.successRate));
-            if (metrics.successRate > 0) {
-                statusText.append(String.format(Locale.US, "Average Match Score: %.2f\n", metrics.avgSimilarity));
-                statusText.append(String.format(Locale.US, "High Quality Matches: %.1f%%\n", metrics.highQualityRate));
+            statusText.append(String.format(Locale.US, "Login Success Rate: %.1f%%\n", metrics.loginSuccessRate));
+            if (metrics.loginSuccessRate > 0) {
+                statusText.append(String.format(Locale.US, "Average Match Score: %.2f\n", metrics.avgLoginSimilarity));
+                statusText.append(String.format(Locale.US, "High Quality Matches: %.1f%%\n", metrics.highQualityLoginRate));
             }
             statusText.append("\n");
+        }
 
-            statusText.append("Login Patterns (Last 30 days):\n");
-            if (metrics.mostCommonLoginTime != null) {
-                statusText.append("• Most frequent login time: ")
-                        .append(metrics.mostCommonLoginTime)
-                        .append("\n");
+        // Add attendance metrics if available
+        if (metrics.totalAttendanceAttempts > 0) {
+            statusText.append("Attendance Success Rate: ")
+                    .append(String.format(Locale.US, "%.1f%%\n", metrics.attendanceSuccessRate));
+            if (metrics.attendanceSuccessRate > 0) {
+                statusText.append(String.format(Locale.US, "Average Match Score: %.2f\n", metrics.avgAttendanceSimilarity));
+                statusText.append(String.format(Locale.US, "High Quality Matches: %.1f%%\n", metrics.highQualityAttendanceRate));
+                statusText.append(String.format(Locale.US, "Attendance Compliance: %.1f%%\n", metrics.attendanceComplianceRate));
             }
+            statusText.append("\n");
+        }
+
+        statusText.append("Login Patterns (Last 30 days):\n");
+        if (metrics.mostCommonLoginTime != null) {
+            statusText.append("• Most frequent login time: ")
+                    .append(metrics.mostCommonLoginTime)
+                    .append("\n");
+        }
+        if (metrics.mostCommonAttendanceTime != null) {
+            statusText.append("• Most frequent attendance time: ")
+                    .append(metrics.mostCommonAttendanceTime)
+                    .append("\n");
         }
 
         if (!metrics.securityWarnings.isEmpty()) {

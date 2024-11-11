@@ -9,12 +9,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:drawableLeft="@drawable/settingsicon"
-        android:text="  Settings"
-        android:paddingLeft="16dp"
-        android:paddingTop="16dp"
-        android:fontFamily="@font/baloo2"
-        android:textColor="@color/primary_dark"
+        android:text="Settings"
         android:textSize="24sp"
         android:textStyle="bold"
         android:layout_marginBottom="24dp"/>
@@ -35,9 +30,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Biometric Authentication"
-                android:fontFamily="@font/baloo2"
-                android:textColor="@color/primary_dark"
-                android:textSize="20sp"
+                android:textSize="18sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="16dp"/>
 
@@ -46,8 +39,6 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Enable Face Recognition"
-                android:fontFamily="@font/baloo2"
-                android:textColor="@color/primary_dark"
                 android:textSize="16sp"
                 android:layout_marginBottom="16dp"/>
 
@@ -55,12 +46,7 @@
                 android:id="@+id/buttonEnrollFace"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Enroll Face"
-                android:fontFamily="@font/baloo2"
-                android:textColor="@color/primary_dark"
-                android:textStyle="bold"
-                android:textSize="14sp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+                android:text="Enroll Face"/>
         </LinearLayout>
 
     </com.google.android.material.card.MaterialCardView>
@@ -81,9 +67,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Security Settings"
-                android:fontFamily="@font/baloo2"
-                android:textColor="@color/primary_dark"
-                android:textSize="20sp"
+                android:textSize="18sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="16dp"/>
 
@@ -98,15 +82,10 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="Max Failed Attempts"
-                    android:fontFamily="@font/baloo2"
-                    android:textColor="@color/primary_dark"
-                    android:textSize="16sp"/>
+                    android:text="Max Failed Attempts"/>
 
                 <Spinner
                     android:id="@+id/spinnerMaxAttempts"
-                    android:fontFamily="@font/baloo2"
-                    android:textColor="@color/primary_dark"
                     android:layout_width="120dp"
                     android:layout_height="wrap_content"/>
             </LinearLayout>
@@ -121,10 +100,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="Lockout Duration (minutes)"
-                    android:fontFamily="@font/baloo2"
-                    android:textColor="@color/primary_dark"
-                    android:textSize="16sp"/>
+                    android:text="Lockout Duration (minutes)"/>
 
                 <Spinner
                     android:id="@+id/spinnerLockoutDuration"
@@ -137,9 +113,6 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Save Security Settings"
-                android:fontFamily="@font/baloo2"
-                android:textColor="@color/primary_dark"
-                android:textStyle="bold"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
         </LinearLayout>
 
@@ -161,55 +134,54 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Security Assessment"
-                android:textSize="20sp"
+                android:textSize="18sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="16dp"/>
 
-            <ScrollView
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="65dp"
+                android:background="#F5F5F5"
                 android:layout_marginBottom="16dp">
 
-                <LinearLayout
-                    android:id="@+id/securityStatusLayout"
+                <ScrollView
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="#F5F5F5"
-                    android:padding="12dp">
+                    android:layout_height="match_parent"
+                    android:fillViewport="true">
 
-                    <TextView
-                        android:id="@+id/textLastAssessment"
+                    <LinearLayout
+                        android:id="@+id/securityStatusLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="No recent assessment available"
-                        android:fontFamily="@font/baloo2"
-                        android:textColor="@color/primary_dark"
-                        android:textSize="16sp"
-                        android:layout_marginBottom="8dp"/>
+                        android:orientation="vertical"
+                        android:padding="12dp">
 
-                    <TextView
-                        android:id="@+id/textSecurityStatus"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="Run a security check to view status"
-                        android:fontFamily="@font/baloo2"
-                        android:textColor="@color/primary_dark"
-                        android:textSize="16sp"
-                        android:lineSpacingExtra="4dp"/>
+                        <TextView
+                            android:id="@+id/textLastAssessment"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="No recent assessment available"
+                            android:textSize="14sp"
+                            android:layout_marginBottom="8dp"/>
 
-                </LinearLayout>
-            </ScrollView>
+                        <TextView
+                            android:id="@+id/textSecurityStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Run a security check to view status"
+                            android:textSize="14sp"
+                            android:lineSpacingExtra="4dp"/>
+
+                    </LinearLayout>
+                </ScrollView>
+            </FrameLayout>
 
             <Button
                 android:id="@+id/buttonSecurityCheck"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Run Security Check"
-                android:fontFamily="@font/baloo2"
-                android:textColor="@color/primary_dark"
-                android:textStyle="bold"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                android:text="Run Security Check"/>
 
         </LinearLayout>
 
@@ -221,7 +193,7 @@
         android:layout_height="wrap_content"
         android:text="Regular security checks help ensure reliable face recognition."
         android:textSize="14sp"
-        android:textColor="@color/primary_dark"
+        android:textColor="?android:textColorSecondary"
         android:gravity="center"
         android:layout_marginTop="8dp"/>
 

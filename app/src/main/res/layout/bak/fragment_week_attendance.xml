@@ -16,7 +16,7 @@
             android:id="@+id/buttonPrevWeek"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:src="@drawable/arrowleft"
+            android:src="@drawable/ic_arrow_left"
             android:background="?attr/selectableItemBackgroundBorderless"/>
 
         <TextView
@@ -32,7 +32,7 @@
             android:id="@+id/buttonNextWeek"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:src="@drawable/arrowright"
+            android:src="@drawable/ic_arrow_right"
             android:background="?attr/selectableItemBackgroundBorderless"/>
     </LinearLayout>
 

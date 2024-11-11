@@ -26,7 +26,7 @@
         android:orientation="vertical"
         android:background="@drawable/rounded_corner_bg"
         android:padding="16dp"
-        android:layout_margin="32dp"
+        android:layout_margin="16dp"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
@@ -35,7 +35,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Face Enrollment"
-            android:fontFamily="@font/quicksand"
             android:textSize="20sp"
             android:textStyle="bold"
             android:textColor="#FFFFFF"
@@ -46,7 +45,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Please look straight at the camera"
-            android:fontFamily="@font/quicksand"
             android:textColor="#FFFFFF"/>
 
     </LinearLayout>
@@ -66,8 +64,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Capture"
-            android:fontFamily="@font/baloo2"
-            android:padding="10dp"
+            android:padding="16dp"
             android:layout_margin="8dp"/>
 
     </androidx.cardview.widget.CardView>
