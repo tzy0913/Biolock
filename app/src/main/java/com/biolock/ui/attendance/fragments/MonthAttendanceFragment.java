@@ -4,6 +4,7 @@
  */
 package com.biolock.ui.attendance.fragments;
 
+// Android Core & UI Components
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -11,18 +12,20 @@ import android.view.ViewGroup;
 import android.widget.CalendarView;
 import android.widget.TextView;
 
+// AndroidX Fragment & RecyclerView
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+// Biolock Components
 import com.biolock.R;
-import com.biolock.model.Attendance;
 import com.biolock.model.User;
 import com.biolock.repository.AttendanceRepository;
 import com.biolock.repository.Result;
 import com.biolock.ui.attendance.adapter.AttendanceAdapter;
 import com.biolock.utils.SessionManager;
 
+// Java Date & Utils
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;

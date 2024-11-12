@@ -5,6 +5,7 @@
  */
 package com.biolock.model;
 
+// Java Utilities
 import java.util.Date;
 
 public class User {

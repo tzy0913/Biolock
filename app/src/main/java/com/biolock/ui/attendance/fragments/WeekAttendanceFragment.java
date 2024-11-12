@@ -4,6 +4,7 @@
  */
 package com.biolock.ui.attendance.fragments;
 
+// Android Core & UI Components
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -12,24 +13,29 @@ import android.view.ViewGroup;
 import android.widget.ImageButton;
 import android.widget.TextView;
 
+// AndroidX Fragment & RecyclerView
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+// Biolock Models
 import com.biolock.R;
-import com.biolock.model.Attendance;
-import com.biolock.model.CourseClass;
 import com.biolock.model.User;
+
+// Biolock Repositories
 import com.biolock.repository.AttendanceRepository;
 import com.biolock.repository.Result;
+
+// Biolock UI Components
 import com.biolock.ui.attendance.adapter.AttendanceAdapter;
+
+// Biolock Utilities
 import com.biolock.utils.SessionManager;
 
+// Java Time & Util
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.Calendar;
-import java.util.Date;
 import java.util.List;
 
 public class WeekAttendanceFragment extends Fragment {

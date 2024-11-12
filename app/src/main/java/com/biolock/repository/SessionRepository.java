@@ -5,9 +5,11 @@
  */
 package com.biolock.repository;
 
+// Android Core
 import android.util.Log;
+
+// Biolock Components
 import com.biolock.database.dao.SessionDao;
-import com.biolock.model.Session;
 
 public class SessionRepository {
     private static final String TAG = "SessionRepository";

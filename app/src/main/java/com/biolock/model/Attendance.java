@@ -5,8 +5,8 @@
  */
 package com.biolock.model;
 
+// Java SQL
 import java.sql.*;
-import java.sql.Time;
 
 public class Attendance {
     /**

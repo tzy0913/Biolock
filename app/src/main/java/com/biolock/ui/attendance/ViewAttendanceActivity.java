@@ -4,14 +4,20 @@
  */
 package com.biolock.ui.attendance;
 
+// Android Core
 import android.os.Bundle;
+
+// AndroidX Libraries
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.viewpager2.widget.ViewPager2;
 
+// Biolock Components
 import com.biolock.R;
 import com.biolock.model.User;
 import com.biolock.ui.attendance.adapter.AttendancePagerAdapter;
 import com.biolock.utils.SessionManager;
+
+// Google Material Design
 import com.google.android.material.tabs.TabLayout;
 import com.google.android.material.tabs.TabLayoutMediator;
 

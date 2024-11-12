@@ -5,9 +5,14 @@
  */
 package com.biolock.repository;
 
+// Android Core
 import android.util.Log;
+
+// Biolock Components
 import com.biolock.database.dao.FaceRecognitionLogDao;
 import com.biolock.model.FaceRecognitionLog;
+
+// Java Utilities
 import java.sql.SQLException;
 import java.util.Calendar;
 import java.util.Date;

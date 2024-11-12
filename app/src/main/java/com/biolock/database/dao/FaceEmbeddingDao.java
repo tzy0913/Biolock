@@ -4,15 +4,21 @@
  */
 package com.biolock.database.dao;
 
+// Android Core
 import android.util.Log;
+
+// Biolock Components
 import com.biolock.database.DatabaseHelper;
-import com.biolock.model.FaceEmbedding;
+
+// Java SQL
 import java.sql.*;
-import java.util.ArrayList;
-import java.util.List;
+
+// Java Collections
+import java.util.Arrays;
 
 public class FaceEmbeddingDao {
     private static final String TAG = "FaceEmbeddingDao";
+    private static final int IV_LENGTH = 16; // AES initialization vector length
 
     // ============================
     // Read Operations
@@ -29,7 +35,8 @@ public class FaceEmbeddingDao {
         ResultSet rs = null;
 
         try {
-            String sql = "SELECT embedding_data FROM face_embeddings WHERE user_id = ?";
+            String sql = "SELECT AES_DECRYPT(embedding_data, get_encryption_key()) as decrypted_data " +
+                    "FROM face_embeddings WHERE user_id = ?";
 
             conn = DatabaseHelper.getInstance().getConnection();
             stmt = conn.prepareStatement(sql);
@@ -37,8 +44,15 @@ public class FaceEmbeddingDao {
             rs = stmt.executeQuery();
 
             if (rs.next()) {
-                Blob blob = rs.getBlob("embedding_data");
-                return blob.getBytes(1, (int) blob.length());
+                byte[] bytes = rs.getBytes("decrypted_data");
+                if (bytes != null) {
+                    // If length is IV_LENGTH more than expected, remove the IV
+                    if (bytes.length > IV_LENGTH) {
+                        Log.d(TAG, "Removing IV from decrypted data");
+                        return Arrays.copyOfRange(bytes, IV_LENGTH, bytes.length);
+                    }
+                    return bytes;
+                }
             }
             return null;
         } finally {
@@ -88,13 +102,21 @@ public class FaceEmbeddingDao {
         PreparedStatement stmt = null;
 
         try {
+            if (embeddingData == null) {
+                throw new SQLException("Embedding data cannot be null");
+            }
+
+            // Add padding bytes to handle IV
+            byte[] paddedData = new byte[embeddingData.length + IV_LENGTH];
+            System.arraycopy(embeddingData, 0, paddedData, IV_LENGTH, embeddingData.length);
+
             String sql = "INSERT INTO face_embeddings (user_id, embedding_data, confidence_score, created_at) " +
-                    "VALUES (?, ?, ?, NOW())";
+                    "VALUES (?, AES_ENCRYPT(?, get_encryption_key()), ?, NOW())";
 
             conn = DatabaseHelper.getInstance().getConnection();
             stmt = conn.prepareStatement(sql);
             stmt.setLong(1, userId);
-            stmt.setBytes(2, embeddingData);
+            stmt.setBytes(2, paddedData);
             stmt.setDouble(3, confidenceScore);
 
             stmt.executeUpdate();
@@ -114,12 +136,23 @@ public class FaceEmbeddingDao {
         PreparedStatement stmt = null;
 
         try {
-            String sql = "UPDATE face_embeddings SET embedding_data = ?, confidence_score = ?, " +
-                    "created_at = NOW() WHERE user_id = ?";
+            if (embeddingData == null) {
+                throw new SQLException("Embedding data cannot be null");
+            }
+
+            // Add padding bytes to handle IV
+            byte[] paddedData = new byte[embeddingData.length + IV_LENGTH];
+            System.arraycopy(embeddingData, 0, paddedData, IV_LENGTH, embeddingData.length);
+
+            String sql = "UPDATE face_embeddings " +
+                    "SET embedding_data = AES_ENCRYPT(?, get_encryption_key()), " +
+                    "confidence_score = ?, " +
+                    "created_at = NOW() " +
+                    "WHERE user_id = ?";
 
             conn = DatabaseHelper.getInstance().getConnection();
             stmt = conn.prepareStatement(sql);
-            stmt.setBytes(1, embeddingData);
+            stmt.setBytes(1, paddedData);
             stmt.setDouble(2, confidenceScore);
             stmt.setLong(3, userId);
 
@@ -159,18 +192,10 @@ public class FaceEmbeddingDao {
      */
     private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
         if (rs != null) {
-            try {
-                rs.close();
-            } catch (SQLException e) {
-                Log.e(TAG, "Error closing ResultSet", e);
-            }
+            try { rs.close(); } catch (SQLException e) { Log.e(TAG, "Error closing ResultSet", e); }
         }
         if (stmt != null) {
-            try {
-                stmt.close();
-            } catch (SQLException e) {
-                Log.e(TAG, "Error closing Statement", e);
-            }
+            try { stmt.close(); } catch (SQLException e) { Log.e(TAG, "Error closing Statement", e); }
         }
         if (conn != null) {
             DatabaseHelper.getInstance().releaseConnection(conn);

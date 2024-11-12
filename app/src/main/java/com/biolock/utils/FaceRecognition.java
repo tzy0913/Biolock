@@ -5,16 +5,23 @@
  */
 package com.biolock.utils;
 
+// Android Core Components
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.util.Log;
+
+// TensorFlow Lite Core
 import org.tensorflow.lite.DataType;
 import org.tensorflow.lite.Interpreter;
+
+// TensorFlow Lite Support
 import org.tensorflow.lite.support.common.FileUtil;
 import org.tensorflow.lite.support.common.ops.NormalizeOp;
 import org.tensorflow.lite.support.image.ImageProcessor;
 import org.tensorflow.lite.support.image.TensorImage;
 import org.tensorflow.lite.support.image.ops.ResizeOp;
+
+// Java IO & NIO
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -31,7 +38,7 @@ public class FaceRecognition {
     private static final float IMAGE_MEAN = 127.5f;
     private static final float IMAGE_STD = 128.0f;
     private static final int EMBEDDING_SIZE = 192;
-    private static final float SIMILARITY_THRESHOLD = 0.80f;
+    private static final float SIMILARITY_THRESHOLD = 0.85f;
 
     // ============================
     // TensorFlow Components
@@ -107,7 +114,7 @@ public class FaceRecognition {
         }
 
         float rawSimilarity = (dotProduct + 1.0f) / 2.0f;
-        return (float) Math.pow(rawSimilarity, 0.4);
+        return (float) Math.pow(rawSimilarity, 0.35);
     }
 
     // ============================
@@ -130,18 +137,32 @@ public class FaceRecognition {
     }
 
     public float[] bytesToEmbedding(byte[] bytes) {
-        if (bytes == null || bytes.length != 4 * EMBEDDING_SIZE) {
-            Log.e(TAG, "Invalid byte array");
+        if (bytes == null) {
+            Log.e(TAG, "Byte array is null");
+            return null;
+        }
+
+        Log.d(TAG, "Received byte array length: " + bytes.length);
+
+        // Expected size check
+        if (bytes.length != 4 * EMBEDDING_SIZE) {
+            Log.e(TAG, "Invalid byte array length. Expected: " + (4 * EMBEDDING_SIZE) + ", Got: " + bytes.length);
             return null;
         }
 
         float[] embedding = new float[EMBEDDING_SIZE];
-        ByteBuffer.wrap(bytes)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .asFloatBuffer()
-                .get(embedding);
+        try {
+            ByteBuffer.wrap(bytes)
+                    .order(ByteOrder.LITTLE_ENDIAN)
+                    .asFloatBuffer()
+                    .get(embedding);
 
-        return embedding;
+            Log.d(TAG, "Successfully converted bytes to embedding");
+            return embedding;
+        } catch (Exception e) {
+            Log.e(TAG, "Error converting bytes to embedding", e);
+            return null;
+        }
     }
 
     // ============================

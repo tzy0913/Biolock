@@ -4,6 +4,7 @@
  */
 package com.biolock.ui.settings;
 
+// Android Core & UI Components
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
@@ -13,11 +14,12 @@ import android.text.style.ForegroundColorSpan;
 import android.view.MenuItem;
 import android.widget.TextView;
 
+// AndroidX Libraries
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
+// Biolock Components
 import com.biolock.R;
-import com.biolock.utils.SecurityAssessment;
 
 public class SecurityDetailsActivity extends AppCompatActivity {
     // Constants

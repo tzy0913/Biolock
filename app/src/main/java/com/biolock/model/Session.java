@@ -5,7 +5,10 @@
  */
 package com.biolock.model;
 
+// Java SQL
 import java.sql.Time;
+
+// Java Utilities
 import java.util.Date;
 
 public class Session {

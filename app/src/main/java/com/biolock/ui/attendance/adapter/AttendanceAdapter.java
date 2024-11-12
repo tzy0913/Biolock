@@ -4,21 +4,24 @@
  */
 package com.biolock.ui.attendance.adapter;
 
+// Android Core & UI Components
 import android.content.Context;
-import android.graphics.Color;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+// AndroidX Components
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
+// Biolock Components
 import com.biolock.R;
 import com.biolock.model.Attendance;
 import com.biolock.model.CourseClass;
 
+// Java Utilities
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;

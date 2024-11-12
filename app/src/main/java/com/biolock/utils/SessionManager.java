@@ -5,11 +5,16 @@
  */
 package com.biolock.utils;
 
+// Android Core Components
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.util.Log;
+
+// Biolock UI Components
 import com.biolock.ui.login.LoginActivity;
+
+// Java Collections
 import java.util.HashMap;
 
 public class SessionManager {

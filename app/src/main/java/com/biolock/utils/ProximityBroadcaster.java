@@ -4,8 +4,11 @@
  */
 package com.biolock.utils;
 
+// Android Bluetooth Core
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
+
+// Android Bluetooth LE
 import android.bluetooth.le.AdvertiseCallback;
 import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertiseSettings;
@@ -15,10 +18,13 @@ import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
+
+// Android Core Components
 import android.content.Context;
 import android.os.ParcelUuid;
 import android.util.Log;
 
+// Java Collections
 import java.util.ArrayList;
 import java.util.List;
 

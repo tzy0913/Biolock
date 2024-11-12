@@ -5,14 +5,21 @@
  */
 package com.biolock.repository;
 
+// Android Core Components
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.util.Log;
+
+// Biolock Components
 import com.biolock.database.dao.*;
 import com.biolock.model.*;
 import com.biolock.utils.*;
+
+// Java IO & SQL
 import java.io.IOException;
 import java.sql.*;
+
+// Java Utilities
 import java.util.Calendar;
 import java.util.List;
 
@@ -161,17 +168,22 @@ public class FaceAuthenticationRepository {
         try {
             // Get stored embedding
             byte[] storedEmbeddingBytes = faceEmbeddingDao.getEmbedding(userId);
+            Log.d(TAG, "Stored embedding bytes: " + (storedEmbeddingBytes != null ? storedEmbeddingBytes.length : "null"));
+
             if (storedEmbeddingBytes == null) {
                 return Result.error("No face enrollment found");
             }
 
             // Generate new embedding from captured face
             float[] newEmbedding = faceRecognition.generateEmbedding(faceBitmap);
+            Log.d(TAG, "New embedding generated: " + (newEmbedding != null ? newEmbedding.length : "null"));
+
             if (newEmbedding == null) {
                 return Result.error("Failed to process face image");
             }
 
             float[] storedEmbedding = faceRecognition.bytesToEmbedding(storedEmbeddingBytes);
+            Log.d(TAG, "Stored embedding converted: " + (storedEmbedding != null ? storedEmbedding.length : "null"));
             boolean authenticated = faceRecognition.matchFace(storedEmbedding, newEmbedding);
             float similarity = faceRecognition.getLastSimilarityScore();
 

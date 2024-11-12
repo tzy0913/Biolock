@@ -5,8 +5,8 @@
  */
 package com.biolock.model;
 
-import java.sql.Date;
-import java.sql.Time;
+// Java SQL
+import java.sql.*;
 
 public class CourseClass {
     // ============================

@@ -4,6 +4,7 @@
  */
 package com.biolock.ui.settings;
 
+// Android Core & Support Libraries
 import android.Manifest;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
@@ -17,8 +18,13 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
+// AndroidX Core & App Libraries
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
+// AndroidX Camera Libraries
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageCapture;
@@ -27,9 +33,8 @@ import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 
+// Biolock Components
 import com.biolock.R;
 import com.biolock.repository.FaceAuthenticationRepository;
 import com.biolock.repository.Result;
@@ -37,6 +42,7 @@ import com.biolock.utils.FacePreprocessor;
 import com.biolock.utils.LivenessDetector;
 import com.biolock.utils.SessionManager;
 
+// Google ML Kit & Vision Libraries
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.face.Face;
@@ -44,6 +50,7 @@ import com.google.mlkit.vision.face.FaceDetection;
 import com.google.mlkit.vision.face.FaceDetector;
 import com.google.mlkit.vision.face.FaceDetectorOptions;
 
+// Java Concurrency Utilities
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;

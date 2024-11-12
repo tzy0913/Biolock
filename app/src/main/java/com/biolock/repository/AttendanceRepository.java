@@ -5,11 +5,18 @@
  */
 package com.biolock.repository;
 
+// Android Core
 import android.util.Log;
+
+// Biolock Database
 import com.biolock.database.dao.AttendanceDao;
 import com.biolock.database.dao.ClassDao;
+
+// Biolock Models
 import com.biolock.model.Attendance;
 import com.biolock.model.CourseClass;
+
+// Java Date & Time
 import java.sql.Date;
 import java.time.LocalDate;
 import java.time.ZoneId;

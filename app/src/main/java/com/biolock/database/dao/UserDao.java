@@ -4,12 +4,15 @@
  */
 package com.biolock.database.dao;
 
+// Android Core
 import android.util.Log;
+
+// Biolock Components
 import com.biolock.database.DatabaseHelper;
 import com.biolock.model.User;
+
+// Java SQL
 import java.sql.*;
-import java.util.ArrayList;
-import java.util.List;
 
 public class UserDao {
     private static final String TAG = "UserDAO";

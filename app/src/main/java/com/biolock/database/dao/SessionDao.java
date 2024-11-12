@@ -5,11 +5,18 @@
  */
 package com.biolock.database.dao;
 
+// Android Core
 import android.util.Log;
+
+// Biolock Components
 import com.biolock.database.DatabaseHelper;
 import com.biolock.model.Session;
 import com.biolock.repository.Result;
+
+// Java SQL
 import java.sql.*;
+
+// Java Utilities
 import java.util.Random;
 
 public class SessionDao {

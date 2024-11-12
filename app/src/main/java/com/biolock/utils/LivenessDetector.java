@@ -5,7 +5,7 @@
  */
 package com.biolock.utils;
 
-import android.view.View;
+// Google ML Kit
 import com.google.mlkit.vision.face.Face;
 
 public class LivenessDetector {

@@ -4,16 +4,21 @@
  */
 package com.biolock.utils;
 
+// Android Core & Components
 import android.Manifest;
 import android.app.Activity;
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Build;
 
+// Android Bluetooth
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
+
+// AndroidX Components
 import androidx.core.content.ContextCompat;
 
+// Java Collections
 import java.util.ArrayList;
 import java.util.List;
 

@@ -4,17 +4,24 @@
  */
 package com.biolock.ui.login;
 
+// Android Core & Support Libraries
 import android.app.ProgressDialog;
 import android.os.Bundle;
 import android.util.Patterns;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
+
+// AndroidX Libraries
 import androidx.appcompat.app.AppCompatActivity;
+
+// Biolock Models & Repositories
 import com.biolock.R;
 import com.biolock.model.User;
 import com.biolock.repository.Result;
 import com.biolock.repository.UserRepository;
+
+// Java Utilities
 import java.util.regex.Pattern;
 
 public class RegisterActivity extends AppCompatActivity {

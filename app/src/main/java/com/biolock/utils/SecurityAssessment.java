@@ -5,7 +5,10 @@
  */
 package com.biolock.utils;
 
+// Biolock Models
 import com.biolock.model.FaceRecognitionLog;
+
+// Java Collections
 import java.util.*;
 
 public class SecurityAssessment {

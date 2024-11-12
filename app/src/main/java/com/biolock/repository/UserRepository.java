@@ -5,11 +5,15 @@
  */
 package com.biolock.repository;
 
+// Android Core
 import android.util.Log;
+
+// Biolock Components
 import com.biolock.database.dao.*;
 import com.biolock.model.*;
+
+// Java Utilities
 import java.sql.*;
-import java.util.Calendar;
 import java.util.List;
 
 public class UserRepository {

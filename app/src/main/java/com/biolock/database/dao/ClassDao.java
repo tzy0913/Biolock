@@ -4,11 +4,18 @@
  */
 package com.biolock.database.dao;
 
+// Android Core
 import android.util.Log;
+
+// Biolock Components
 import com.biolock.database.DatabaseHelper;
 import com.biolock.model.Attendance;
 import com.biolock.model.CourseClass;
+
+// Java SQL
 import java.sql.*;
+
+// Java Collections
 import java.util.ArrayList;
 import java.util.List;
 

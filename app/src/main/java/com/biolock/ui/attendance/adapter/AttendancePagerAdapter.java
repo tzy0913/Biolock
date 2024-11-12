@@ -4,15 +4,17 @@
  */
 package com.biolock.ui.attendance.adapter;
 
+// AndroidX Fragment & ViewPager
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 import androidx.viewpager2.adapter.FragmentStateAdapter;
 
+// Biolock Components
 import com.biolock.model.User;
 import com.biolock.ui.attendance.fragments.CurrentSessionFragment;
+import com.biolock.ui.attendance.fragments.MonthAttendanceFragment;
 import com.biolock.ui.attendance.fragments.TodayAttendanceFragment;
 import com.biolock.ui.attendance.fragments.WeekAttendanceFragment;
-import com.biolock.ui.attendance.fragments.MonthAttendanceFragment;
 
 public class AttendancePagerAdapter extends FragmentStateAdapter {
     // State

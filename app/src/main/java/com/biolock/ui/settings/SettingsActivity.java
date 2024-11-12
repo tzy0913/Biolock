@@ -4,6 +4,7 @@
  */
 package com.biolock.ui.settings;
 
+// Android Core & UI Components
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.Intent;
@@ -18,16 +19,21 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+// AndroidX Libraries
 import androidx.appcompat.app.AppCompatActivity;
 
+// Biolock Models & Repositories
 import com.biolock.R;
 import com.biolock.model.SecuritySettings;
 import com.biolock.repository.FaceAuthenticationRepository;
 import com.biolock.repository.Result;
 import com.biolock.repository.UserRepository;
+
+// Biolock Utilities
 import com.biolock.utils.SecurityAssessment;
 import com.biolock.utils.SessionManager;
 
+// Java Utilities
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;

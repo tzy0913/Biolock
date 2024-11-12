@@ -5,10 +5,15 @@
  */
 package com.biolock.utils;
 
+// Android Core Components
 import android.graphics.*;
 import android.media.Image;
 import android.util.Log;
+
+// Google ML Kit
 import com.google.mlkit.vision.face.Face;
+
+// Java IO & NIO
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 

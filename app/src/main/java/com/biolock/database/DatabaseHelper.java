@@ -4,13 +4,20 @@
  */
 package com.biolock.database;
 
+// Android Core
 import android.util.Log;
+
+// SSH Components
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
+
+// Java SQL
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+
+// Java Utilities
 import java.util.Properties;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
