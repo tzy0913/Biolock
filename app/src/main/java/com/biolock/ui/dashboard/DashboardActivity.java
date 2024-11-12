@@ -5,9 +5,9 @@
  */
 package com.biolock.ui.dashboard;
 
+// Android Core & Support Libraries
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.bluetooth.BluetoothAdapter;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -17,13 +17,18 @@ import android.media.Image;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
+
+// Android Bluetooth
+import android.bluetooth.BluetoothAdapter;
+
+// Android Text & UI Components
 import android.text.InputFilter;
 import android.text.InputType;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.style.ForegroundColorSpan;
-import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -33,6 +38,8 @@ import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+
+// AndroidX & Camera Libraries
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
@@ -42,30 +49,42 @@ import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
+
+// Biolock Models
 import com.biolock.R;
 import com.biolock.model.Attendance;
 import com.biolock.model.CourseClass;
 import com.biolock.model.SecuritySettings;
 import com.biolock.model.User;
+
+// Biolock Repositories
 import com.biolock.repository.AttendanceRepository;
 import com.biolock.repository.FaceAuthenticationRepository;
 import com.biolock.repository.Result;
 import com.biolock.repository.SessionRepository;
 import com.biolock.repository.UserRepository;
+
+// Biolock UI Components
 import com.biolock.ui.attendance.ViewAttendanceActivity;
 import com.biolock.ui.login.LoginActivity;
 import com.biolock.ui.settings.SettingsActivity;
+
+// Biolock Utilities
 import com.biolock.utils.FacePreprocessor;
 import com.biolock.utils.LivenessDetector;
 import com.biolock.utils.ProximityBroadcaster;
 import com.biolock.utils.ProximityValidator;
 import com.biolock.utils.SessionManager;
+
+// Google Libraries
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.face.Face;
 import com.google.mlkit.vision.face.FaceDetection;
 import com.google.mlkit.vision.face.FaceDetector;
 import com.google.mlkit.vision.face.FaceDetectorOptions;
+
+// Java Utilities
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.List;

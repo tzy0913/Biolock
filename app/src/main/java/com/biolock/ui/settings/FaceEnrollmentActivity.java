@@ -98,7 +98,12 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        cameraExecutor.shutdown();
+        if (cameraExecutor != null && !cameraExecutor.isShutdown()) {
+            cameraExecutor.shutdown();
+        }
+        if (livenessDetector != null) {
+            livenessDetector.reset();
+        }
     }
 
     @Override
@@ -118,28 +123,53 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
 
     // Initialization Methods
     private void initializeComponents() {
-        // Initialize UI components
-        previewView = findViewById(R.id.previewView);
-        statusText = findViewById(R.id.statusTextView);
-        captureButton = findViewById(R.id.captureButton);
-        overlayView = findViewById(R.id.overlayView);
+        try {
+            // Initialize UI components with null checks
+            previewView = findViewById(R.id.previewView);
+            statusText = findViewById(R.id.statusTextView);
+            captureButton = findViewById(R.id.captureButton);
+            overlayView = findViewById(R.id.overlayView);
 
-        // Initialize utils and repositories
-        sessionManager = new SessionManager(this);
-        faceAuthenticationRepository = new FaceAuthenticationRepository(this);
-        livenessDetector = new LivenessDetector();
+            // Verify critical UI components
+            if (previewView == null || statusText == null ||
+                    captureButton == null || overlayView == null) {
+                throw new IllegalStateException("Required views not found in layout");
+            }
 
-        // Initialize ML Kit face detector with high accuracy settings
-        FaceDetectorOptions options = new FaceDetectorOptions.Builder()
-                .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
-                .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
-                .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
-                .build();
-        faceDetector = FaceDetection.getClient(options);
+            // Initialize utils and repositories with defensive checks
+            sessionManager = new SessionManager(this);
+            if (sessionManager == null) {
+                throw new IllegalStateException("Failed to initialize SessionManager");
+            }
 
-        // Set up button listeners
-        captureButton.setEnabled(false);
-        captureButton.setOnClickListener(v -> captureAndEnrollFace());
+            faceAuthenticationRepository = new FaceAuthenticationRepository(this);
+            if (faceAuthenticationRepository == null) {
+                throw new IllegalStateException("Failed to initialize FaceAuthenticationRepository");
+            }
+
+            livenessDetector = new LivenessDetector();
+            if (livenessDetector == null) {
+                throw new IllegalStateException("Failed to initialize LivenessDetector");
+            }
+
+            // Initialize ML Kit face detector with high accuracy settings
+            FaceDetectorOptions options = new FaceDetectorOptions.Builder()
+                    .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+                    .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
+                    .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
+                    .build();
+            faceDetector = FaceDetection.getClient(options);
+
+            // Set up button listeners with null check
+            captureButton.setEnabled(false);
+            captureButton.setOnClickListener(v -> captureAndEnrollFace());
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error initializing components", e);
+            Toast.makeText(this, "Error initializing camera components",
+                    Toast.LENGTH_LONG).show();
+            finish(); // Safely exit the activity
+        }
     }
 
     // Camera Setup Methods
@@ -394,15 +424,36 @@ public class FaceEnrollmentActivity extends AppCompatActivity {
 
     // UI Helper Methods
     private void updateStatus(String message) {
-        runOnUiThread(() -> statusText.setText(message));
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        runOnUiThread(() -> {
+            if (statusText != null) {
+                statusText.setText(message);
+            }
+        });
     }
 
     private void setNormalOverlay() {
-        runOnUiThread(() -> overlayView.setBackgroundResource(R.drawable.normal_overlay));
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        runOnUiThread(() -> {
+            if (overlayView != null) {
+                overlayView.setBackgroundResource(R.drawable.normal_overlay);
+            }
+        });
     }
 
     private void setScanningOverlay() {
-        runOnUiThread(() -> overlayView.setBackgroundResource(R.drawable.scanning_overlay));
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        runOnUiThread(() -> {
+            if (overlayView != null) {
+                overlayView.setBackgroundResource(R.drawable.scanning_overlay);
+            }
+        });
     }
 
     // Permission Helper Methods

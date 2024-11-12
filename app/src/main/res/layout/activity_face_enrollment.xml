@@ -41,8 +41,9 @@
             android:textColor="#FFFFFF"
             android:layout_marginBottom="8dp"/>
 
+        <!-- Changed ID from statusText to statusTextView -->
         <TextView
-            android:id="@+id/statusText"
+            android:id="@+id/statusTextView"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Please look straight at the camera"
